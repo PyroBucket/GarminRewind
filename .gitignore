@@ -1,0 +1,31 @@
+# --- secrets: never commit ---
+# `.env*` (no dot) so sibling files like .env_z and .env.local are covered too
+.env*
+!.env.example
+secrets.json
+*.pem
+*.key
+
+# Garmin / garth OAuth token caches
+.garth/
+tokens/
+*token*.json
+
+# --- python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# --- data & output ---
+data/
+*.fit
+*.tcx
+out/
+
+# --- editors / os ---
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

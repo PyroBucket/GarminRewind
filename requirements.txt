@@ -1,0 +1,4 @@
+# The official client (garmin-connect-personal-api-python) needs Python >=3.12.
+# This project ships its own thin client in garmin_api.py so it runs on 3.9+.
+requests
+python-dotenv

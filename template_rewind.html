@@ -1,0 +1,1900 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your Garmin Rewind</title>
+<!-- the id is load-bearing: the export copies this sheet into the SVG it
+     rasterises, and picking the wrong <style> would produce unstyled cards
+     with no error to go on -->
+<style id="pageCss">
+/* ---------- page tokens ----------
+   Only the page chrome follows the theme. The story panels carry their own
+   colour and ink and look the same in light and dark, which is the point:
+   the charts page is the sober one, this one is not.
+
+   --speck paints the flecked-paper grain on the chrome; the panels sit on
+   top of it as flat saturated fields. */
+:root {
+  color-scheme: light;
+  --surface-1:      #fffdf4;
+  --page:           #f2efe4;
+  --text-primary:   #0b0b0b;
+  --text-secondary: #4b4942;
+  --text-muted:     #86837a;
+  --border:         rgba(11,11,11,0.14);
+  --speck:          rgba(140,96,36,0.30);
+  --squiggle-alpha: 0.55;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-1:      #18171c;
+    --page:           #0a0a0b;
+    --text-primary:   #ffffff;
+    --text-secondary: #c9c6bc;
+    --text-muted:     #8b8880;
+    --border:         rgba(255,255,255,0.14);
+    --speck:          rgba(255,255,255,0.12);
+    --squiggle-alpha: 0.7;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-1:      #18171c;
+  --page:           #0a0a0b;
+  --text-primary:   #ffffff;
+  --text-secondary: #c9c6bc;
+  --text-muted:     #8b8880;
+  --border:         rgba(255,255,255,0.14);
+  --speck:          rgba(255,255,255,0.12);
+  --squiggle-alpha: 0.7;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  padding: 28px 28px 120px;
+  color: var(--text-primary);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  /* flecked paper: two tilings of one tiny dot at coprime-ish sizes, so the
+     specks never line up into a visible grid */
+  background:
+    radial-gradient(circle at 20% 35%, var(--speck) 0 0.9px, transparent 1px) 0 0 / 37px 41px,
+    radial-gradient(circle at 70% 80%, var(--speck) 0 0.7px, transparent 1px) 11px 23px / 53px 59px,
+    var(--page);
+}
+.wrap { max-width: 1240px; margin: 0 auto; position: relative; z-index: 1; }
+
+/* ---------- scroll progress ---------- */
+.progress {
+  position: fixed; inset: 0 auto auto 0; height: 6px; width: 0;
+  z-index: 100; border-radius: 0 6px 6px 0;
+  background: linear-gradient(90deg, #6b21e8, #ff2d6f 30%, #ff6b2d 52%,
+                                     #ffd400 70%, #c5f72b 85%, #27e0a8);
+  transition: width .08s linear;
+}
+
+/* ---------- squiggles ----------
+   A single SVG sitting behind everything at full document height, redrawn on
+   resize. It spans the whole window rather than the content column, so the
+   waves run out past the cards and into the margins. Decorative only: hidden
+   from assistive tech, and it never intercepts a pointer. */
+.squiggles {
+  position: absolute; top: 0; left: 0; width: 100%; z-index: 0;
+  pointer-events: none; overflow: hidden;
+}
+.squiggles path {
+  fill: none; stroke-linecap: round;
+  opacity: var(--squiggle-alpha);
+  /* each layer drifts at its own rate; the JS writes --shift per group */
+  transition: none;
+}
+
+/* ---------- top bar ----------
+   The masthead borrows the poster trick from the reference: a solid slab of
+   colour with the word sitting half in and half out of it, so the type reads
+   as printed rather than typed. */
+header.top {
+  position: relative; z-index: 2;
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; margin-bottom: 44px;
+}
+h1 {
+  /* shrink-wrapped, or the slab stretches the full width of the flex row */
+  position: relative; width: fit-content; margin: 0.85em 0 0;
+  font-size: clamp(38px, 6.5vw, 70px); font-weight: 900;
+  letter-spacing: -0.055em; line-height: 0.88; text-transform: lowercase;
+  isolation: isolate;
+}
+h1 .slab {
+  /* the solid bar the word is printed on, bled out past it either side */
+  position: absolute; z-index: -1; left: -14px; right: -14px;
+  top: 0.12em; bottom: 0.06em;
+  background: var(--text-primary);
+}
+h1 .a { color: var(--page); position: relative; }
+h1 .b {
+  /* the second word rides up over the bar, outlined so it survives the
+     overlap -- the poster move from the reference */
+  position: absolute; left: 14%; top: -0.74em; z-index: 1;
+  color: #c4f21d; -webkit-text-stroke: 3px #0b0b0b;
+  paint-order: stroke fill; pointer-events: none;
+}
+.sub {
+  color: var(--text-secondary); font-size: 12px; margin-top: 14px;
+  font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+}
+.actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.jump, .theme-toggle, .export-all {
+  /* inline-flex + min-height rather than bare padding, so the control clears
+     the 44px touch target on a phone without growing on a desktop */
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px;
+  border: 2px solid var(--text-primary); background: var(--surface-1);
+  color: var(--text-primary); border-radius: 999px;
+  padding: 9px 18px; font: inherit; font-size: 13px; font-weight: 700;
+  cursor: pointer; text-decoration: none; white-space: nowrap;
+  transition: transform .15s ease, background .15s ease, color .15s ease;
+}
+/* every hover state in this file is gated on a real pointer: on a touch
+   screen the :hover sticks after the tap and the card stays rotated */
+@media (hover: hover) {
+  .jump:hover, .theme-toggle:hover, .export-all:hover {
+    background: var(--text-primary); color: var(--page);
+    transform: translateY(-2px) rotate(-1deg);
+  }
+}
+
+/* ======================================================================
+   Panels
+
+   Each panel is a column with one internal gap, so spacing inside never
+   depends on which blocks a given panel happens to have. `.facts` is pushed
+   to the bottom, which lines the footers of two panels sharing a row up with
+   each other however much copy sits above them.
+   ====================================================================== */
+.story { position: relative; z-index: 1; display: grid; gap: 26px; }
+.row { display: grid; gap: 26px; grid-template-columns: repeat(12, 1fr); }
+
+.panel {
+  --ink: #0b0b0b;
+  /* the secondary ink has to survive a motif or a bloom sitting behind it,
+     so it stays close to full strength -- the hierarchy comes from size and
+     weight, not from fading the small text out */
+  --ink-soft: rgba(11,11,11,0.92);
+  --ink-faint: rgba(11,11,11,0.13);
+  --motif: rgba(11,11,11,0.13);
+  --pop: #0b0b0b;
+  position: relative;
+  display: flex; flex-direction: column; gap: 20px;
+  overflow: hidden; isolation: isolate;
+  border-radius: 30px;
+  padding: 48px;
+  min-height: 340px;
+  color: var(--ink);
+  background: var(--field, #b6a4ff);
+  box-shadow: 0 18px 50px -26px rgba(0,0,0,0.55);
+}
+.panel > * { margin: 0; }
+/* `.light-ink` is the inverse case -- a field dark enough to carry white
+   type. Everything else runs black on colour, the way the reference does. */
+.panel.light-ink {
+  --ink: #fff;
+  --ink-soft: rgba(255,255,255,0.93);
+  --ink-faint: rgba(255,255,255,0.18);
+  --motif: rgba(255,255,255,0.15);
+}
+/* the head of a panel reads as one unit, so those gaps are pulled tighter */
+.eyebrow + * { margin-top: -10px; }
+.headline + .say, .say + .say { margin-top: -12px; }
+
+/* ---------- field motifs ----------
+   Each mood gets one printed pattern in a corner, faded out with a mask so
+   it never crowds the type. Pure CSS: no extra JS, no extra requests. */
+.panel::before {
+  content: ""; position: absolute; z-index: -2; pointer-events: none;
+  /* bottom-left, so it sits opposite the bloom instead of under it, and
+     pulled far enough off the corner that only its outer edge reaches the
+     column the copy runs in */
+  inset: auto auto -26% -14%; width: 46%; aspect-ratio: 1;
+  background: var(--motif-art, none);
+  -webkit-mask-image: radial-gradient(closest-side, #000 22%, transparent 92%);
+          mask-image: radial-gradient(closest-side, #000 22%, transparent 92%);
+  transform: rotate(var(--motif-turn, 0deg));
+}
+/* the chroma wash -- the liquid-gradient blooms of the reference, stacked
+   radial gradients blurred into each other */
+.panel::after {
+  content: ""; position: absolute; z-index: -1; pointer-events: none;
+  inset: -24% -10% auto auto; width: 56%; aspect-ratio: 1;
+  background: var(--bloom, radial-gradient(circle, rgba(255,255,255,0.22), transparent 68%));
+  filter: blur(var(--bloom-blur, 0px));
+  opacity: var(--bloom-alpha, 0.9);
+}
+
+/* ---------- the six moods ----------
+   Flat saturated fields. --field is the paper, --pop the hard-offset ink the
+   big type is printed in, --motif-art the pattern in the corner. */
+.mood-a {                                   /* signature lilac */
+  --field: #b6a4ff; --pop: #ff4d2d;
+  --motif-turn: -8deg;
+  --motif-art: repeating-conic-gradient(var(--motif) 0% 25%, transparent 0% 50%);
+  background-size: auto;
+  --bloom: radial-gradient(circle at 30% 30%, #ffe14d, transparent 55%),
+           radial-gradient(circle at 65% 45%, #ff3d6e, transparent 52%),
+           radial-gradient(circle at 48% 70%, #00e5c0, transparent 55%);
+  --bloom-blur: 46px; --bloom-alpha: 0.62;
+}
+.mood-b {                                   /* acid green */
+  --field: #c5f72b; --pop: #6b21e8;
+  --motif-turn: 12deg;
+  --motif-art: repeating-radial-gradient(circle at 50% 50%,
+                 var(--motif) 0 11px, transparent 11px 24px);
+  --bloom: radial-gradient(circle at 60% 40%, #00e0ff, transparent 58%),
+           radial-gradient(circle at 35% 62%, #ff5ca8, transparent 55%);
+  --bloom-blur: 50px; --bloom-alpha: 0.5;
+}
+.mood-c {                                   /* hot coral */
+  --field: #ff5a3c; --pop: #c5f72b;
+  --motif-turn: -5deg;
+  --motif-art: radial-gradient(var(--motif) 26%, transparent 27%);
+  --bloom: radial-gradient(circle at 40% 35%, #ffd84d, transparent 52%),
+           radial-gradient(circle at 70% 60%, #7c3aed, transparent 54%),
+           radial-gradient(circle at 30% 70%, #2bf5c0, transparent 50%);
+  --bloom-blur: 44px; --bloom-alpha: 0.52;
+}
+.mood-d {                                   /* electric mint */
+  --field: #27e0a8; --pop: #ff2d6f;
+  --motif-turn: 0deg;
+  --motif-art: repeating-linear-gradient(90deg,
+                 var(--motif) 0 9px, transparent 9px 22px);
+  --bloom: radial-gradient(circle at 55% 35%, #ffe14d, transparent 55%),
+           radial-gradient(circle at 35% 65%, #6b4dff, transparent 55%);
+  --bloom-blur: 48px; --bloom-alpha: 0.5;
+}
+.mood-e {                                   /* deep violet, white ink */
+  --field: #3b17d6; --pop: #c5f72b;
+  --motif-turn: 18deg;
+  --motif-art: repeating-conic-gradient(var(--motif) 0% 25%, transparent 0% 50%);
+  --bloom: radial-gradient(circle at 35% 30%, #ff2d6f, transparent 52%),
+           radial-gradient(circle at 68% 52%, #00e5ff, transparent 52%),
+           radial-gradient(circle at 45% 75%, #ffe14d, transparent 50%);
+  --bloom-blur: 52px; --bloom-alpha: 0.78;
+}
+.mood-f {                                   /* acid yellow */
+  --field: #ffd400; --pop: #ff3d2e;
+  --motif-turn: -14deg;
+  --motif-art: repeating-radial-gradient(circle at 50% 50%,
+                 var(--motif) 0 8px, transparent 8px 19px);
+  --bloom: radial-gradient(circle at 60% 38%, #ff6b2d, transparent 55%),
+           radial-gradient(circle at 32% 68%, #00d0ff, transparent 52%);
+  --bloom-blur: 46px; --bloom-alpha: 0.62;
+}
+/* the conic checkerboard needs a tile size; the radial/linear ones carry
+   their own period in the gradient stops */
+.mood-a::before, .mood-e::before { background-size: 46px 46px; }
+.mood-c::before { background-size: 19px 19px; }
+
+.panel .eyebrow {
+  /* printed as a sticker rather than set as a caption */
+  align-self: flex-start;
+  background: var(--ink); color: var(--field);
+  border-radius: 999px; padding: 7px 15px;
+  font-size: 11px; font-weight: 900; letter-spacing: 0.16em;
+  text-transform: uppercase;
+  transition: transform .18s ease;
+}
+/* the sticker peels off square when you point at it. Resting state stays
+   flat so the exported card is unaffected. */
+@media (hover: hover) {
+  .panel .eyebrow:hover { transform: rotate(-3deg) translateY(-2px) scale(1.04); }
+}
+.panel .headline {
+  font-size: clamp(34px, 4.6vw, 60px); font-weight: 900; line-height: 1.0;
+  letter-spacing: -0.045em; text-wrap: balance;
+}
+.panel .say {
+  font-size: 16px; font-weight: 600; line-height: 1.45;
+  color: var(--ink-soft); max-width: 60ch;
+}
+
+.bignum {
+  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  font-weight: 900; letter-spacing: -0.055em; line-height: 0.88;
+  font-size: clamp(64px, 12vw, 168px);
+  font-variant-numeric: tabular-nums;
+  /* a hard offset in the mood's pop colour -- screen-printed, not embossed */
+  text-shadow: 0.055em 0.055em 0 var(--pop);
+  transition: transform .18s ease, text-shadow .18s ease;
+}
+/* pointing at the figure lifts the sheet off its own ink: the type steps up
+   and left while the offset grows, which is the print version of a hover */
+@media (hover: hover) {
+  .bignum:hover {
+    transform: translate(-2px, -2px) rotate(-0.6deg);
+    text-shadow: 0.085em 0.085em 0 var(--pop);
+  }
+}
+.bignum .suffix {
+  font-size: clamp(18px, 2.3vw, 30px); font-weight: 800;
+  letter-spacing: 0.02em; text-transform: uppercase; color: var(--ink);
+  text-shadow: none;
+}
+
+/* the opening panel earns the whole screen: one centred cluster rather than
+   the usual head-at-the-top, footer-at-the-bottom arrangement */
+.panel.opener { min-height: min(72vh, 620px); justify-content: center; padding: 56px; gap: 24px; }
+.panel.opener .facts { margin-top: 10px !important; }
+@media (max-width: 900px) {
+  .row > * { grid-column: span 12 !important; }
+  .panel { padding: 30px 24px; border-radius: 22px; min-height: 0; gap: 18px; }
+  .panel.opener { padding: 34px 24px; min-height: 0; }
+  .story, .row { gap: 18px; }
+  body { padding: 20px 16px 90px; }
+  /* the masthead's second word needs headroom it can't borrow from a wrapped
+     flex row, and a thinner outline at this size */
+  h1 { margin-top: 0.95em; }
+  h1 .b { left: 10%; -webkit-text-stroke-width: 2px; }
+  .panel .headline { letter-spacing: -0.035em; }
+  .bignum { text-shadow: 0.045em 0.045em 0 var(--pop); }
+}
+
+.span-12 { grid-column: span 12; }
+.span-7  { grid-column: span 7; }
+.span-6  { grid-column: span 6; }
+.span-5  { grid-column: span 5; }
+
+.panel-split {
+  display: grid; gap: 30px; align-items: center;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+@media (max-width: 820px) { .panel-split { grid-template-columns: 1fr; } }
+
+/* a scribble in the opener's empty half, in the panel's own ink */
+.doodle {
+  position: absolute; z-index: -1; pointer-events: none;
+  /* sits in the opener's empty right half; it is pulled up above the fact
+     row and faded well back, because the facts' captions run underneath it */
+  right: -6%; top: 36%; width: 48%;
+  transform: translateY(-50%) rotate(-10deg);
+  opacity: 0.22;
+}
+.doodle path { fill: none; stroke: currentColor; stroke-linecap: round; }
+@media (max-width: 900px) { .doodle { display: none; } }
+
+/* ---------- ranked list ---------- */
+.rank-list { display: grid; gap: 16px; }
+.rank-row { display: grid; grid-template-columns: 46px 1fr auto; gap: 16px; align-items: center; }
+/* a row steps out of the list when you point at it, and its rank number
+   cocks over -- the list's version of the tile tilt */
+.rank-row { transition: transform .18s ease; }
+.rank-row .n { transition: transform .18s ease; }
+@media (hover: hover) {
+  .rank-row:hover { transform: translateX(6px); }
+  .rank-row:hover .n { transform: rotate(-7deg) scale(1.12); }
+}
+.rank-row .n {
+  font-size: 32px; font-weight: 900; line-height: 1; letter-spacing: -0.05em;
+  color: var(--ink); font-variant-numeric: tabular-nums;
+}
+.rank-row .who { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 8px; }
+.rank-row .meter {
+  height: 12px; border-radius: 999px; background: var(--ink-faint);
+  overflow: hidden; border: 1.5px solid var(--ink);
+}
+.rank-row .meter span {
+  display: block; height: 100%; background: var(--ink);
+  width: 0; transition: width 1.1s cubic-bezier(.22,1,.36,1);
+}
+.rank-row .amt { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rank-row .amt small { display: block; font-size: 12px; font-weight: 700; color: var(--ink-soft); }
+
+/* ---------- column strips ---------- */
+.strip { display: flex; align-items: flex-end; gap: 3px; height: 160px; }
+.strip .bar { flex: 1 1 0; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; min-width: 0; }
+.strip .bar i {
+  display: block; border-radius: 6px 6px 3px 3px; background: var(--ink);
+  opacity: 0.38; height: 0;
+  /* the height is written inline by the observer, so the hover lift has to
+     ride on `transform` -- an inline style would win any height rule here */
+  transition: height .9s cubic-bezier(.22,1,.36,1), opacity .2s, transform .18s ease;
+}
+/* the tallest column gets the mood's pop colour and a hard outline, so the
+   shape of the distribution reads before any label does */
+.strip .bar.peak i {
+  opacity: 1; background: var(--pop);
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+@media (hover: hover) {
+  .strip .bar:hover i { opacity: 0.75; transform: translateY(-5px); }
+  .strip .bar.peak:hover i { opacity: 1; }
+  /* the column after it comes up a little as well, so the hover reads as a
+     ripple through the distribution rather than one twitching bar (CSS has
+     no previous-sibling combinator, so the left neighbour stays put) */
+  .strip .bar:hover + .bar i { transform: translateY(-2px); }
+}
+.strip + .strip-axis { margin-top: -12px; }
+.strip-axis {
+  display: flex; gap: 3px;
+  font-size: 11px; font-weight: 700; color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+/* labels keep their slot but may spill into the blank slots either side --
+   on a narrow screen a 24-hour axis gives each label ~11px of its own, and
+   only every third one is shown, so the neighbours are free space */
+.strip-axis span { flex: 1 1 0; text-align: center; min-width: 0; white-space: nowrap; }
+.strip-axis span.q { visibility: hidden; }
+
+/* ---------- comparison tiles ---------- */
+.compare { display: grid; gap: 16px; grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 1000px) { .compare { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px)  { .compare { grid-template-columns: 1fr; } }
+.cmp {
+  /* opaque, or the field's motif reads straight through the tile and the
+     caption underneath it loses its background */
+  background: linear-gradient(var(--ink-faint), var(--ink-faint)), var(--field);
+  border: 2px solid var(--ink);
+  border-radius: 20px; padding: 20px;
+  transition: transform .18s ease;
+}
+@media (hover: hover) {
+  .cmp:nth-child(odd):hover  { transform: rotate(-1.5deg) translateY(-3px); }
+  .cmp:nth-child(even):hover { transform: rotate(1.5deg) translateY(-3px); }
+}
+/* pressed flat, like a sticker pushed down. Outside the hover query on
+   purpose, though a touch browser only fires `:active` on a tile it treats
+   as clickable, so on a phone this may never show. */
+/* `:nth-child(n)` only to match the specificity of the hover rules above, so
+   the press wins while the pointer is still over the tile */
+.cmp:nth-child(n):active { transform: rotate(0deg) scale(0.975); }
+.cmp .v {
+  font-size: 38px; font-weight: 900; letter-spacing: -0.045em; line-height: 1.02;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0.04em 0.04em 0 var(--pop);
+}
+.cmp .u { font-size: 13px; font-weight: 900; margin-top: 8px; letter-spacing: 0.1em; text-transform: uppercase; }
+.cmp .l { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin-top: 10px; }
+
+/* ---------- fact grid ---------- */
+.facts {
+  display: grid; gap: 24px 28px; margin-top: auto !important;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+/* every fact cell is its own small printed block: same tilt, alternating
+   sense. Hover-only, so the pinned export geometry is untouched. */
+.fact { transition: transform .18s ease; }
+@media (hover: hover) {
+  .fact:nth-child(odd):hover  { transform: rotate(-1.2deg) translateY(-3px); }
+  .fact:nth-child(even):hover { transform: rotate(1.2deg) translateY(-3px); }
+}
+.fact .k {
+  font-size: 11px; font-weight: 900; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--ink);
+  padding-bottom: 7px; border-bottom: 2px solid var(--ink);
+}
+.fact .v { font-size: 30px; font-weight: 900; letter-spacing: -0.04em; margin-top: 10px; line-height: 1.08; }
+.fact .d { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin-top: 5px; }
+
+/* ---------- personal-record cards ----------
+   One card per session the watch flagged. The date is the biggest type on the
+   card deliberately: the flag says a record fell, never which, so there is no
+   magnitude here that could honestly be printed larger. */
+.pr-list { display: grid; gap: 14px; }
+.pr {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 18px;
+  align-items: start;
+  padding: 18px 20px; border-radius: 22px;
+  background: var(--ink-faint);
+  transition: transform .18s ease;
+}
+@media (hover: hover) {
+  .pr:hover { transform: translateY(-3px) rotate(-0.5deg); }
+}
+.pr .seal {
+  display: grid; place-items: center; width: 46px; height: 46px;
+  border-radius: 999px; border: 2.5px solid var(--ink);
+  background: var(--pop); color: var(--ink);
+  font-size: 11px; font-weight: 900; letter-spacing: 0.04em;
+  transform: rotate(-7deg);
+}
+.pr .body { display: grid; gap: 3px; min-width: 0; }
+/* the record itself leads the card -- the date and the session line under it
+   are context, set small enough that they cannot be read as the record */
+.pr .won { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 7px; }
+.pr .win {
+  background: var(--ink); color: var(--field);
+  border-radius: 16px; padding: 9px 15px;
+}
+.pr .win b {
+  display: block;
+  font-size: 10px; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase;
+  opacity: 0.78;
+}
+.pr .win strong {
+  display: block; margin-top: 2px;
+  font-size: 27px; font-weight: 900; letter-spacing: -0.04em; line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+.pr .win small {
+  display: block; font-size: 11px; font-weight: 700; opacity: 0.78;
+  font-variant-numeric: tabular-nums;
+}
+.pr .win.muted {
+  background: none; color: var(--ink); padding: 4px 0;
+  border-bottom: 2px solid var(--ink);
+}
+.pr .when { font-size: 15px; font-weight: 900; letter-spacing: -0.01em; }
+.pr .what { font-size: 14px; font-weight: 700; color: var(--ink-soft); }
+.pr .how {
+  font-size: 13px; font-weight: 600; color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- sleep arc ---------- */
+.arc { display: flex; align-items: center; justify-content: center; }
+.arc svg { width: 100%; max-width: 290px; height: auto; }
+
+/* ---------- badge ---------- */
+.badge-ring {
+  align-self: flex-start;
+  display: inline-flex; align-items: center; gap: 9px;
+  border: 2.5px solid var(--ink); border-radius: 999px;
+  background: var(--pop); color: var(--ink);
+  padding: 9px 19px; font-size: 13px; font-weight: 900;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  transform: rotate(-2deg);
+  transition: transform .18s ease;
+}
+/* the badge is pinned on at an angle already -- hovering swings it the other
+   way, so it rocks rather than lifts */
+@media (hover: hover) {
+  .badge-ring:hover { transform: rotate(2.5deg) scale(1.04); }
+}
+
+/* ---------- closing hand-off ---------- */
+.outro {
+  position: relative; z-index: 1; overflow: hidden;
+  margin-top: 40px; padding: 40px; border-radius: 26px;
+  border: 3px solid var(--text-primary); background: var(--surface-1);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 24px; flex-wrap: wrap;
+}
+/* the op-art tail from the poster, running off the right edge */
+.outro::before {
+  content: ""; position: absolute; z-index: -1; pointer-events: none;
+  inset: -40% -14% -40% auto; width: 46%;
+  background: repeating-radial-gradient(circle at 70% 50%,
+    var(--text-primary) 0 9px, transparent 9px 20px);
+  opacity: 0.14;
+}
+.outro h2 {
+  font-size: clamp(24px, 3.4vw, 40px); font-weight: 900; margin: 0 0 8px;
+  letter-spacing: -0.045em; text-transform: lowercase;
+}
+.outro p { margin: 0; color: var(--text-secondary); font-size: 14px; max-width: 54ch; }
+.outro .go {
+  border: 2.5px solid var(--text-primary); border-radius: 999px;
+  padding: 14px 26px;
+  font: inherit; font-size: 14px; font-weight: 900; cursor: pointer;
+  text-decoration: none; color: #0b0b0b; white-space: nowrap;
+  background: #c5f72b;
+  transition: transform .15s ease, background .15s ease;
+}
+@media (hover: hover) {
+  .outro .go:hover { background: #ff5a3c; transform: translateY(-2px) rotate(-1.5deg); }
+}
+
+/* ---------- entrance ----------
+   One transform per panel, driven by the observer. The children stagger in
+   behind it on their own delays, which is what makes a panel feel composed
+   rather than switched on. */
+.reveal { opacity: 0; transform: translateY(34px) scale(0.985) rotate(var(--rv-turn, 0deg)); }
+.reveal.in {
+  opacity: 1; transform: none;
+  transition: opacity .7s ease, transform .8s cubic-bezier(.22,1,.36,1);
+}
+/* panels sharing a row come in off opposite angles and straighten as they
+   land -- the same tilt the tiles do on hover, spent on the way in */
+.row > .reveal:nth-child(odd)  { --rv-turn: -1.4deg; }
+.row > .reveal:nth-child(even) { --rv-turn:  1.4deg; }
+/* the doodle is excluded: it carries its own transform, which the keyframe
+   would overwrite */
+.panel.in > *:not(.doodle):not(.shot-btn) { animation: rise .62s cubic-bezier(.22,1,.36,1) backwards; }
+.panel.in > *:nth-child(1) { animation-delay: .06s; }
+.panel.in > *:nth-child(2) { animation-delay: .13s; }
+.panel.in > *:nth-child(3) { animation-delay: .20s; }
+.panel.in > *:nth-child(4) { animation-delay: .27s; }
+.panel.in > *:nth-child(n+5) { animation-delay: .34s; }
+@keyframes rise { from { opacity: 0; transform: translateY(16px); } }
+
+/* ======================================================================
+   Phones
+
+   The 900px tier above reflows the grid; this one deals with what a 360px
+   viewport does to the type and to the two layouts that assume horizontal
+   room -- the ranked list and the fact grid.
+   ====================================================================== */
+@media (max-width: 560px) {
+  /* 190px minimums give one column on a phone, which makes these panels
+     enormously tall; 136px fits two and the values still read */
+  .facts { grid-template-columns: repeat(auto-fit, minmax(136px, 1fr)); gap: 20px 18px; }
+  .fact .v { font-size: 25px; }
+  /* the rank number and the amount both want their own line's worth of
+     width; stacked, the meter gets the full column instead of ~160px */
+  .rank-row { grid-template-columns: 34px 1fr; gap: 6px 12px; }
+  .rank-row .n { font-size: 26px; }
+  .rank-row .amt { grid-column: 2; text-align: left; margin-top: 2px; }
+  .rank-row .amt small { display: inline; margin-left: 8px; }
+  .strip { height: 120px; }
+  .pr { padding: 15px 16px; gap: 13px; }
+  .pr .seal { width: 38px; height: 38px; font-size: 10px; }
+  .pr .won { gap: 8px; }
+  .pr .win { padding: 7px 12px; border-radius: 13px; }
+  .pr .win strong { font-size: 22px; }
+  .cmp { padding: 16px; border-radius: 16px; }
+  .cmp .v { font-size: 32px; }
+  .outro { padding: 26px 22px; margin-top: 28px; }
+  .outro .go { width: 100%; text-align: center; }
+  .actions { width: 100%; }
+  .jump, .theme-toggle, .export-all { flex: 1 1 auto; }
+}
+@media (max-width: 420px) {
+  /* the clamp floors were written for a desktop minimum, not a 312px box */
+  .panel .headline { font-size: 28px; }
+  .bignum { font-size: 52px; gap: 10px; }
+  .bignum .suffix { font-size: 16px; }
+  .panel .say { font-size: 15px; }
+  .panel { padding: 24px 18px; }
+  .panel.opener { padding: 28px 18px; }
+  body { padding: 16px 12px 80px; }
+}
+
+/* ---------- per-panel export button ----------
+   Absolutely positioned and appended last, like `.doodle`, so it stays out
+   of the children's stagger order and out of the panel's column flow. */
+.shot-btn {
+  position: absolute; z-index: 3; top: 16px; right: 16px;
+  display: inline-flex; align-items: center; gap: 7px;
+  min-height: 40px; padding: 8px 15px;
+  border: 2.5px solid var(--ink); border-radius: 999px;
+  background: var(--field); color: var(--ink);
+  font: inherit; font-size: 12px; font-weight: 900;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  cursor: pointer; white-space: nowrap;
+  transition: transform .15s ease, background .15s ease, color .15s ease;
+}
+.shot-btn[disabled] { opacity: 0.55; cursor: progress; }
+@media (hover: hover) {
+  .shot-btn:hover { background: var(--ink); color: var(--field); transform: rotate(-2deg); }
+}
+@media (max-width: 560px) { .shot-btn { top: 10px; right: 10px; min-height: 36px; padding: 6px 12px; font-size: 11px; } }
+/* the sticker and the button share the top line of the panel, so the sticker
+   gives up exactly the width the button needs */
+.panel .eyebrow { max-width: calc(100% - 112px); }
+@media (max-width: 560px) { .panel .eyebrow { max-width: calc(100% - 84px); } }
+
+/* ---------- export staging ----------
+   The card is laid out for real, off-screen, so it can be measured before it
+   is serialised into the SVG. `left` rather than `display:none`, because a
+   hidden subtree has no box to measure. */
+#shotStage {
+  position: fixed; top: 0; left: -20000px;
+  width: 0; height: 0; overflow: visible; pointer-events: none;
+  contain: layout style;
+}
+
+/* ---------- the exported card ----------
+   Everything here is scoped under `.ig-card`, which keeps it inert on the
+   live page and lets it override the responsive tiers above -- inside the
+   rasterised SVG the viewport is the card's, but while the card is being
+   measured it is still sitting in the real document, where a phone-width
+   media query would otherwise apply and throw the measurement off. */
+.ig-card {
+  box-sizing: border-box; position: relative; overflow: hidden;
+  display: flex; flex-direction: column; gap: 26px;
+  padding: 54px;
+  color: #0b0b0b;
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at 20% 35%, rgba(140,96,36,0.30) 0 0.9px, transparent 1px) 0 0 / 37px 41px,
+    radial-gradient(circle at 70% 80%, rgba(140,96,36,0.30) 0 0.7px, transparent 1px) 11px 23px / 53px 59px,
+    #f2efe4;
+}
+.ig-card .ig-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 18px; flex: 0 0 auto;
+}
+.ig-card .ig-mark {
+  font-size: 30px; font-weight: 900; letter-spacing: -0.055em;
+  text-transform: lowercase; line-height: 1;
+  background: #0b0b0b; color: #f2efe4; padding: 8px 16px 11px; border-radius: 999px;
+}
+.ig-card .ig-mark em { font-style: normal; color: #c4f21d; }
+.ig-card .ig-range {
+  font-size: 17px; font-weight: 800; letter-spacing: 0.1em;
+  text-transform: uppercase; color: #4b4942; text-align: right;
+}
+.ig-card .ig-stage { flex: 1 1 auto; min-height: 0; position: relative; }
+.ig-card .ig-scale { transform-origin: top left; }
+
+/* the panel itself, pinned to one geometry regardless of what tier the
+   live viewport happens to be in while we measure */
+.ig-card .panel {
+  width: 100% !important; min-height: 0;
+  padding: 54px !important; border-radius: 36px !important;
+  gap: 26px !important; box-shadow: none;
+  /* a card is a fixed box, so a short panel has to centre its cluster -- the
+     page's `margin-top: auto` on `.facts` would otherwise leave a third of
+     the card as empty field between the copy and the fact row */
+  justify-content: center;
+}
+.ig-card .facts { margin-top: 12px !important; }
+.ig-card .panel.opener { padding: 54px !important; justify-content: center; }
+.ig-card .doodle { display: none !important; }
+.ig-card .shot-btn { display: none !important; }
+.ig-card .reveal, .ig-card .panel > * { opacity: 1 !important; transform: none !important; animation: none !important; }
+.ig-card .rank-row .meter span, .ig-card .strip .bar i { transition: none !important; }
+
+/* a fixed type scale: the live page sizes its big type in vw, which inside
+   a rasterised SVG resolves against a viewport that is not the one the card
+   was measured in. Pinning it in px makes the export identical from a phone
+   and from a desktop. */
+.ig-card .panel .headline { font-size: 62px !important; letter-spacing: -0.045em !important; }
+.ig-card .panel .say { font-size: 25px !important; max-width: none; }
+/* the gap has to clear the hard offset the big figure is printed with, or
+   the unit sits on top of the shadow */
+.ig-card .bignum { font-size: 176px !important; gap: 30px; text-shadow: 0.055em 0.055em 0 var(--pop) !important; }
+.ig-card .bignum .suffix { font-size: 32px !important; }
+.ig-card .eyebrow { font-size: 16px !important; padding: 10px 20px !important; max-width: none; }
+/* 180px is what fits four facts across the card's 864px content box; wider
+   minimums drop the fourth onto a row of its own */
+.ig-card .facts { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important; gap: 30px !important; }
+.ig-card .fact .k { font-size: 16px !important; }
+.ig-card .fact .v { font-size: 38px !important; }
+.ig-card .fact .d { font-size: 18px !important; }
+.ig-card .rank-list { gap: 22px; }
+.ig-card .rank-row { grid-template-columns: 62px 1fr auto !important; gap: 20px !important; }
+.ig-card .rank-row .n { font-size: 44px !important; }
+.ig-card .rank-row .who { font-size: 26px !important; }
+.ig-card .rank-row .meter { height: 16px; }
+.ig-card .rank-row .amt { font-size: 21px !important; grid-column: auto !important; text-align: right !important; margin-top: 0 !important; }
+.ig-card .rank-row .amt small { display: block !important; font-size: 16px !important; margin-left: 0 !important; }
+.ig-card .pr-list { gap: 20px; }
+.ig-card .pr { padding: 28px 30px !important; border-radius: 30px !important; gap: 26px !important; }
+.ig-card .pr .seal { width: 70px !important; height: 70px !important; font-size: 17px !important; border-width: 3.5px !important; }
+.ig-card .pr .won { gap: 14px; margin-bottom: 12px; }
+.ig-card .pr .win { padding: 14px 22px !important; border-radius: 22px !important; }
+.ig-card .pr .win b { font-size: 15px !important; }
+.ig-card .pr .win strong { font-size: 40px !important; }
+.ig-card .pr .win small { font-size: 16px !important; }
+.ig-card .pr .when { font-size: 22px !important; }
+.ig-card .pr .what { font-size: 21px !important; }
+.ig-card .pr .how { font-size: 19px !important; }
+.ig-card .strip { height: 210px !important; gap: 4px; }
+.ig-card .strip-axis { font-size: 15px; }
+.ig-card .compare { grid-template-columns: repeat(2, 1fr) !important; gap: 22px !important; }
+.ig-card .cmp { padding: 26px !important; border-radius: 24px !important; }
+.ig-card .cmp .v { font-size: 52px !important; }
+.ig-card .cmp .u { font-size: 17px !important; }
+.ig-card .cmp .l { font-size: 17px !important; }
+.ig-card .badge-ring { font-size: 17px; padding: 11px 24px; }
+.ig-card .arc svg { max-width: 330px; }
+.ig-card .panel-split { grid-template-columns: minmax(0,1fr) minmax(0,1fr) !important; gap: 34px !important; }
+
+.ig-card .ig-foot {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; font-size: 16px; font-weight: 800; color: #4b4942;
+  letter-spacing: 0.08em; text-transform: uppercase;
+}
+.ig-card .ig-dots { display: flex; gap: 7px; }
+.ig-card .ig-dots i { width: 11px; height: 11px; border-radius: 999px; background: rgba(11,11,11,0.22); }
+.ig-card .ig-dots i.on { background: #0b0b0b; }
+
+/* the 9:16 story card has room above and below but the same width budget */
+.ig-card.story { padding: 110px 54px; gap: 40px; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .reveal, .reveal.in { opacity: 1; transform: none; transition: none; }
+  .panel.in > *:not(.doodle):not(.shot-btn) { animation: none; }
+  .shot-btn { transition: none; }
+  .shot-btn:hover { transform: none; }
+  .rank-row .meter span, .strip .bar i { transition: none; }
+  .progress { transition: none; }
+  .cmp, .jump, .theme-toggle, .outro .go { transition: none; }
+  .cmp:hover, .jump:hover, .theme-toggle:hover, .outro .go:hover { transform: none; }
+  /* the tilt family: no transition, and nothing moves on hover or press.
+     `.badge-ring` keeps its resting angle -- that is layout, not motion. */
+  .fact, .rank-row, .rank-row .n, .panel .eyebrow, .bignum, .badge-ring,
+  .strip .bar i { transition: none; }
+  .fact:hover, .rank-row:hover, .rank-row:hover .n, .panel .eyebrow:hover,
+  .bignum:hover, .cmp:nth-child(n):active,
+  .strip .bar:hover i, .strip .bar:hover + .bar i { transform: none; }
+  .bignum:hover { text-shadow: 0.055em 0.055em 0 var(--pop); }
+  .badge-ring:hover { transform: rotate(-2deg); }
+}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<svg class="squiggles" id="squiggles" aria-hidden="true" focusable="false"></svg>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1><span class="slab"></span><span class="a">rewind</span><span class="b">garmin</span></h1>
+      <div class="sub" id="subtitle"></div>
+    </div>
+    <div class="actions">
+      <button class="export-all" id="shotFormat" type="button"
+              title="Switch between a 4:5 feed post and a 9:16 story">Post 4:5</button>
+      <button class="export-all" id="shotAll" type="button">Save every card</button>
+      <a class="jump" href="charts.html">Show me the charts →</a>
+      <button class="theme-toggle" id="themeToggle" type="button">Dark mode</button>
+    </div>
+  </header>
+
+  <main class="story" id="story"></main>
+
+  <section class="outro">
+    <div>
+      <h2>and that's a wrap.</h2>
+      <p>Every number up there came off your own watch. Want the week-by-week
+         version of any of it? It's all waiting next door.</p>
+    </div>
+    <a class="go" href="charts.html">Take me to the charts →</a>
+  </section>
+</div>
+
+<div id="shotStage" aria-hidden="true"></div>
+
+<script>
+const DATA = /*__PAYLOAD__*/null;
+
+/* ============================ helpers ============================ */
+const $ = (sel, root) => (root || document).querySelector(sel);
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function el(tag, attrs, parent) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const k in (attrs || {})) node.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(node);
+  return node;
+}
+function html(tag, cls, parent, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text != null) node.textContent = text;
+  if (parent) parent.appendChild(node);
+  return node;
+}
+
+const fmt = {
+  int: v => Math.round(v).toLocaleString("en-US"),
+  one: v => (Math.round(v * 10) / 10).toLocaleString("en-US",
+    {minimumFractionDigits: 1, maximumFractionDigits: 1}),
+  day: iso => {
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-GB",
+      {day: "numeric", month: "short", year: "numeric", timeZone: "UTC"});
+  },
+};
+
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ============================ motion ============================ */
+
+/* One observer drives every entrance: fade the panel in, then let its bars
+   and counters run. Anything already on screen at load fires immediately. */
+const revealer = new IntersectionObserver((entries, obs) => {
+  for (const entry of entries) {
+    if (!entry.isIntersecting) continue;
+    entry.target.classList.add("in");
+    obs.unobserve(entry.target);
+    entry.target.querySelectorAll("[data-grow]").forEach(node => {
+      node.style[node.dataset.axis || "height"] = node.dataset.grow;
+    });
+    entry.target.querySelectorAll("[data-count]").forEach(countUp);
+  }
+}, {threshold: 0.15, rootMargin: "0px 0px -8% 0px"});
+
+function reveal(node) {
+  node.classList.add("reveal");
+  revealer.observe(node);
+  return node;
+}
+
+/* Tick a number up from zero. Eased, so it decelerates into the real value
+   instead of stopping dead on it. */
+function countUp(node) {
+  const target = Number(node.dataset.count);
+  const digits = Number(node.dataset.digits || 0);
+  const suffix = node.dataset.suffix || "";
+  const show = v => node.textContent =
+    v.toLocaleString("en-US", {minimumFractionDigits: digits,
+                               maximumFractionDigits: digits}) + suffix;
+  if (REDUCED || !isFinite(target)) { show(target); return; }
+  const span = 1200, t0 = performance.now();
+  const step = now => {
+    const p = Math.min(1, (now - t0) / span);
+    show(target * (1 - Math.pow(1 - p, 3)));
+    if (p < 1) requestAnimationFrame(step); else show(target);
+  };
+  requestAnimationFrame(step);
+}
+
+/* ---------------------------- squiggles ----------------------------
+   Hand-drawn-ish waves behind the whole story. Generated rather than drawn
+   so they cover whatever height the page ends up being, and seeded off a
+   fixed counter so a resize redraws the same squiggles instead of a new set
+   jumping into place. */
+const WHIM = ["#6b21e8", "#ff2d6f", "#ff6b2d", "#27e0a8",
+              "#00c8ff", "#c5f72b", "#ffd400", "#ff5a3c"];
+
+function seeded(n) {               /* a tiny LCG -- organic, but repeatable */
+  let s = (n * 1103515245 + 12345) & 0x7fffffff;
+  return () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+}
+
+function wavePath(y, width, amp, len, phase, slope) {
+  /* a chain of cubic segments -- a quadratic sine looks mechanical, and the
+     slight per-segment drift is what keeps it feeling drawn by hand */
+  let d = "M0 " + y.toFixed(1);
+  for (let x = 0; x < width; x += len) {
+    const half = len / 2;
+    d += " C" + (x + half * 0.4).toFixed(1) + " " + (y - amp + slope * x).toFixed(1) +
+         " " + (x + half * 0.6).toFixed(1) + " " + (y - amp + slope * x).toFixed(1) +
+         " " + (x + half).toFixed(1) + " " + (y + slope * (x + half)).toFixed(1) +
+         " C" + (x + half * 1.4).toFixed(1) + " " + (y + amp + slope * x).toFixed(1) +
+         " " + (x + half * 1.6).toFixed(1) + " " + (y + amp + slope * x).toFixed(1) +
+         " " + (x + len).toFixed(1) + " " + (y + slope * (x + len)).toFixed(1);
+  }
+  return d;
+}
+
+const layers = [];
+function drawSquiggles() {
+  const svg = $("#squiggles");
+  /* the layer is absolutely positioned but still counts toward scroll height,
+     so collapse it before measuring or every redraw grows the page -- and put
+     it back if we bail, otherwise a measurement taken while the page is hidden
+     leaves the squiggles invisible until the next resize */
+  const previous = svg.getAttribute("height");
+  svg.setAttribute("height", 0);
+  const width = document.documentElement.clientWidth;
+  const height = document.documentElement.scrollHeight;
+  if (width < 40 || height < 40) {
+    if (previous) svg.setAttribute("height", previous);
+    return;
+  }
+
+  svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+  svg.setAttribute("height", height);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.innerHTML = "";
+  layers.length = 0;
+
+  const count = Math.max(6, Math.round(height / 420));
+  for (let i = 0; i < count; i++) {
+    const rand = seeded(i + 1);
+    const g = el("g", {}, svg);
+    const y = (i + 0.5) * (height / count) + (rand() - 0.5) * 140;
+    el("path", {
+      d: wavePath(y, width * 1.4, 26 + rand() * 46, 190 + rand() * 260,
+                  0, (rand() - 0.5) * 0.06),
+      stroke: WHIM[i % WHIM.length],
+      "stroke-width": (3 + rand() * 4.5).toFixed(2),
+    }, g);
+    /* every layer drifts at its own rate, which is what reads as depth */
+    layers.push({node: g, rate: 0.04 + rand() * 0.16});
+  }
+  parallax();
+}
+
+function parallax() {
+  if (REDUCED) return;
+  const y = scrollY;
+  for (const l of layers) {
+    l.node.setAttribute("transform", "translate(0 " + (y * l.rate).toFixed(1) + ")");
+  }
+}
+
+/* ---------------------------- scroll chrome ---------------------------- */
+const bar = $("#progress");
+let ticking = false;
+addEventListener("scroll", () => {
+  if (ticking) return;
+  ticking = true;
+  requestAnimationFrame(() => {
+    const max = document.documentElement.scrollHeight - innerHeight;
+    bar.style.width = (max > 0 ? Math.min(100, (scrollY / max) * 100) : 0) + "%";
+    parallax();
+    ticking = false;
+  });
+}, {passive: true});
+
+/* Only a width change can alter the layout, and only a layout change needs
+   new squiggles. On a phone the URL bar sliding away fires `resize` over and
+   over mid-scroll; regenerating the whole SVG each time makes the page stutter
+   for no visible gain, so height-only resizes are ignored. */
+let resizeTimer, lastWidth = innerWidth;
+addEventListener("resize", () => {
+  if (innerWidth === lastWidth) return;
+  lastWidth = innerWidth;
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(drawSquiggles, 150);
+});
+
+/* ============================ panel pieces ============================ */
+
+/* Black ink on a saturated field is the house style; only the deep violet is
+   dark enough to flip. Keep this in step with the `.mood-*` rules -- a mood
+   listed here without `light-ink` set on a dark field goes unreadable. */
+const MOODS = {
+  a: "mood-a", b: "mood-b", c: "mood-c",
+  d: "mood-d", f: "mood-f",
+  e: "mood-e light-ink",
+};
+
+function row(parent) { return html("div", "row", parent || $("#story")); }
+
+function panel(parent, mood, span, eyebrow, extra) {
+  const node = html("div", "panel " + MOODS[mood] + " span-" + span +
+                           (extra ? " " + extra : ""), parent);
+  if (eyebrow) html("p", "eyebrow", node, eyebrow);
+  reveal(node);
+  return node;
+}
+
+/* The one huge figure a panel is built around. */
+function bignum(parent, value, digits, unit) {
+  const box = html("div", "bignum", parent);
+  const n = html("span", null, box, "0");
+  n.dataset.count = value;
+  n.dataset.digits = digits;
+  if (unit) html("span", "suffix", box, unit);
+  return box;
+}
+
+/* The same wave generator as the background, in the panel's own ink, filling
+   the half of the opener the headline doesn't use. Decorative and absolutely
+   positioned, so it never joins the staggered entrance of the real content. */
+function doodle(parent) {
+  const W = 520, H = 360;
+  const svg = el("svg", {class: "doodle", viewBox: "0 0 " + W + " " + H,
+                         "aria-hidden": "true", focusable: "false"}, parent);
+  for (let i = 0; i < 5; i++) {
+    const rand = seeded(i + 11);
+    el("path", {
+      d: wavePath(40 + i * 70 + rand() * 18, W, 16 + rand() * 20,
+                  110 + rand() * 90, 0, 0),
+      "stroke-width": (2 + rand() * 2.4).toFixed(2),
+    }, svg);
+  }
+}
+
+function facts(parent, items) {
+  const grid = html("div", "facts", parent);
+  items.filter(Boolean).forEach(f => {
+    const node = html("div", "fact", grid);
+    html("div", "k", node, f.k);
+    html("div", "v", node, f.v);
+    if (f.d) html("div", "d", node, f.d);
+  });
+  return grid;
+}
+
+/* A ranked list with a meter per row. `weight` drives the bar and is read
+   relative to the biggest row, so the leader always fills it -- the numbers
+   underneath are what carry the absolute scale. */
+function rankList(parent, items) {
+  const box = html("div", "rank-list", parent);
+  const top = Math.max(...items.map(i => i.weight), 1);
+  items.forEach((item, i) => {
+    const rw = html("div", "rank-row", box);
+    html("div", "n", rw, "#" + (i + 1));
+    const mid = html("div", null, rw);
+    html("div", "who", mid, item.label);
+    const meter = html("div", "meter", mid);
+    const fill = html("span", null, meter);
+    /* floor at 3% so a one-session row still reads as a bar, not a gap */
+    fill.dataset.grow = Math.max(3, (item.weight / top) * 100) + "%";
+    fill.dataset.axis = "width";
+    if (REDUCED) fill.style.width = fill.dataset.grow;
+    const amt = html("div", "amt", rw, item.value);
+    if (item.sub) html("small", null, amt, item.sub);
+  });
+  return box;
+}
+
+/* One card per session the watch stamped as a personal best.
+
+   `records` are the distances that session is quickest at anywhere in the
+   window -- the named record, as close as the data can get. The session line
+   underneath stays a description of the day, not a claim about the record. */
+function prList(parent, items) {
+  const box = html("div", "pr-list", parent);
+  items.forEach(item => {
+    const card = html("div", "pr", box);
+    html("div", "seal", card, "PB");
+    const body = html("div", "body", card);
+
+    const won = html("div", "won", body);
+    if (item.records.length) {
+      item.records.forEach(r => {
+        const chip = html("div", "win", won);
+        html("b", null, chip, r.label);
+        html("strong", null, chip, r.value);
+        if (r.pace) html("small", null, chip, r.pace);
+      });
+    } else {
+      /* no split in this session leads the window, so whatever the watch saw
+         is a record we cannot name from the cached fields */
+      html("div", "win muted", won).appendChild(
+        html("b", null, null, "A best fell · the watch won't say which"));
+    }
+
+    html("div", "when", body, fmt.day(item.date) + " · " + item.type);
+    html("div", "what", body, item.name);
+    html("div", "how", body, "on the day: " + item.session);
+  });
+  return box;
+}
+
+/* A strip of columns sized by count -- used for the hour-of-day, weekday and
+   month distributions. One hue at two opacities: the peak column is solid,
+   the rest recede, so the shape reads before any label does.
+
+   peakIndex names the column to highlight when the headline's winner is not
+   simply the tallest bar -- the month strip shows clipped first/last months
+   that are drawn but excluded from "your biggest month". Omit it and the
+   tallest bar wins, which is right for every strip whose headline has no
+   such exclusion. */
+function strip(parent, bars, labels, peakIndex) {
+  const max = Math.max(...bars.map(b => b.value), 1);
+  const named = Number.isInteger(peakIndex) && peakIndex >= 0;
+  const box = html("div", "strip", parent);
+  bars.forEach((b, i) => {
+    const isPeak = named ? i === peakIndex : (b.value === max && max > 0);
+    const col = html("div", "bar" + (isPeak ? " peak" : ""), box);
+    col.title = b.title;
+    const fill = html("i", null, col);
+    /* floor at 3px so an empty hour still reads as a slot, not a hole */
+    fill.dataset.grow = (b.value ? Math.max(6, (b.value / max) * 100) : 3) + "%";
+    if (REDUCED) fill.style.height = fill.dataset.grow;
+  });
+  if (labels) {
+    const axis = html("div", "strip-axis", parent);
+    labels.forEach(l => html("span", l == null ? "q" : null, axis, l == null ? "." : l));
+  }
+  return box;
+}
+
+/* Bedtime-to-wake-time drawn on a 24-hour clock face: midnight at the top,
+   the arc covering the hours you were actually asleep. */
+function sleepArc(parent, sleep) {
+  const toHours = text => {
+    const [h, m] = text.split(":").map(Number);
+    return h + m / 60;
+  };
+  const R = 92, C = 120;
+  const svg = el("svg", {viewBox: "0 0 240 240", role: "img",
+                         "aria-label": "Average night, " + sleep.bedtime +
+                                       " to " + sleep.waketime}, parent);
+  const at = h => {
+    const a = (h / 24) * 2 * Math.PI - Math.PI / 2;
+    return [C + R * Math.cos(a), C + R * Math.sin(a)];
+  };
+
+  el("circle", {cx: C, cy: C, r: R, fill: "none", stroke: "currentColor",
+                "stroke-opacity": 0.18, "stroke-width": 18}, svg);
+
+  const bed = toHours(sleep.bedtime), wake = toHours(sleep.waketime);
+  const sweep = ((wake - bed) % 24 + 24) % 24;
+  const [x1, y1] = at(bed), [x2, y2] = at(wake);
+  el("path", {
+    d: "M" + x1 + " " + y1 + " A" + R + " " + R + " 0 " +
+       (sweep > 12 ? 1 : 0) + " 1 " + x2 + " " + y2,
+    /* the slept hours in the mood's pop colour, outlined so they read as a
+       printed band rather than a tint of the track */
+    fill: "none", stroke: "var(--pop)", "stroke-width": 18,
+    "stroke-linecap": "round",
+  }, svg);
+
+  [bed, wake].forEach((h, i) => {
+    const [x, y] = at(h);
+    el("circle", {cx: x, cy: y, r: 8, fill: "currentColor",
+                  stroke: "currentColor", "stroke-opacity": 0.35,
+                  "stroke-width": i ? 5 : 0}, svg);
+  });
+
+  [0, 6, 12, 18].forEach(h => {
+    const [x, y] = at(h);
+    const label = el("text", {x: C + (x - C) * 0.72, y: C + (y - C) * 0.72 + 4,
+                              "text-anchor": "middle", fill: "currentColor",
+                              "fill-opacity": 0.8}, svg);
+    label.setAttribute("font-size", "12");
+    label.setAttribute("font-weight", "700");
+    label.textContent = String(h).padStart(2, "0");
+  });
+
+  const mid = el("text", {x: C, y: C - 4, "text-anchor": "middle",
+                          fill: "currentColor"}, svg);
+  mid.setAttribute("font-size", "30");
+  mid.setAttribute("font-weight", "800");
+  mid.textContent = fmt.one(sleep.avg_hours) + "h";
+  const sub = el("text", {x: C, y: C + 17, "text-anchor": "middle",
+                          fill: "currentColor", "fill-opacity": 0.9}, svg);
+  sub.setAttribute("font-size", "12");
+  sub.setAttribute("font-weight", "700");
+  sub.textContent = "average night";
+}
+
+/* ============================ the story ============================ */
+
+function renderStory() {
+  const w = DATA.wrapped;
+  const host = $("#story");
+  $("#subtitle").textContent =
+    fmt.day(DATA.meta.start) + " – " + fmt.day(DATA.meta.end) +
+    " · " + DATA.meta.days + " days of showing up · built " + DATA.meta.generated;
+
+  if (!w) {
+    /* the panel wrapper matters: `.say` is only styled inside one */
+    const p = panel(row(), "a", 12, "Nothing to rewind yet");
+    html("h2", "headline", p, "Your year hasn't landed yet");
+    html("p", "say", p,
+      "No sessions in this window. Run a fetch, rebuild, come back — and the " +
+      "charts next door still have whatever your watch did record.");
+    return;
+  }
+
+  /* ---- opening: the headline total ---- */
+  {
+    const p = panel(row(), "a", 12, "Your year in one number", "opener");
+    bignum(p, w.opening.km, 1, "kilometres");
+    html("p", "say", p,
+      w.opening.sessions + " sessions. " + w.opening.hours_label +
+      " of moving time. " + w.opening.days + " days. Here's how you spent them.");
+    facts(p, [
+      {k: "Sessions", v: fmt.int(w.opening.sessions), d: "every one of them logged"},
+      {k: "Moving time", v: w.opening.hours_label, d: "pauses don't count"},
+      {k: "Energy", v: fmt.int(w.opening.calories) + " kcal", d: "torched while training"},
+    ]);
+    doodle(p);   /* last, so it stays out of the children's stagger order */
+  }
+
+  /* ---- the one session that stood above the rest ----
+     The only panel in the deck about a single moment rather than a year, so
+     it gets the day around it too: what the session took out of you, and the
+     night that led into it. */
+  if (w.hardest) {
+    const d = w.hardest;
+    const p = panel(row(), "c", 12,
+      d.is_pr ? "The day you went all in · new PB" : "The day you went all in");
+    html("h2", "headline", p, d.name);
+    /* load, not distance: load is what this session won on, and a panel whose
+       biggest type reads "4.1 kilometres" argues against its own copy */
+    bignum(p, d.load, 0, "training load");
+    html("p", "say", p,
+      fmt.day(d.date) + ". Out the door at " + d.clock + ", moving for " +
+      d.duration + ". Garmin scored it " + d.load + " for training load — " +
+      "nothing else you did all year came close." +
+      (d.rpe ? " You called it " + d.rpe + " out of 10" +
+               (d.feel ? " and felt “" + d.feel.toLowerCase() + "” afterwards" : "") + "."
+             : ""));
+    /* the contrast is the point: load is intensity-weighted, so the hardest
+       session is routinely not the longest one */
+    if (d.rival) {
+      html("p", "say", p,
+        "For scale: your longest, " + d.rival.name + " on " +
+        fmt.day(d.rival.date) + ", ran " + d.rival.duration +
+        (d.rival.load ? " and still only scored " + d.rival.load + "."
+                      : " and still scored a fraction of it."));
+    }
+
+    const tiles = [
+      d.battery && {v: d.battery.high + " → " + d.battery.low, u: "body battery",
+                    l: "exactly what that day took out of you"},
+      d.steps && {v: fmt.int(d.steps), u: "steps", l: "racked up across the whole day"},
+      d.calories && {v: fmt.int(d.calories), u: "kcal", l: "torched in that session alone"},
+      d.night && d.night.score && {v: d.night.score + " / 100", u: "night before",
+                                   l: fmt.one(d.night.hours) + "h of sleep going in"},
+    ].filter(Boolean);
+    if (tiles.length) {
+      const grid = html("div", "compare", p);
+      tiles.forEach(t => {
+        const tile = html("div", "cmp", grid);
+        html("div", "v", tile, t.v);
+        html("div", "u", tile, t.u);
+        html("div", "l", tile, t.l);
+      });
+    }
+
+    facts(p, [
+      {k: "Moving time", v: d.duration, d: d.type.toLowerCase()},
+      d.km && {k: "Distance", v: fmt.one(d.km) + " km", d: "covered in that time"},
+      d.pace && {k: "Average pace", v: d.pace, d: "held for the whole session"},
+      d.avg_hr && {k: "Heart rate", v: d.avg_hr + " bpm",
+                   d: d.max_hr ? "averaged · peaked at " + d.max_hr : "averaged"},
+      /* a flat city run logs a few metres of GPS drift; below 50 m there is no
+         climb to report and the fact is just noise with a unit on it */
+      d.elevation >= 50 && {k: "Climbed", v: d.elevation + " m", d: "in a single go"},
+    ]);
+  }
+
+  /* ---- top sports + hour of day ---- */
+  {
+    const r = row();
+
+    if (w.podium.length) {
+      const p = panel(r, "f", 5, "Your top sports");
+      html("h2", "headline", p, w.podium[0].type + " ran away with it");
+      html("p", "say", p, "It took " + w.podium[0].share +
+        "% of every moving hour you logged.");
+      rankList(p, w.podium.map(s => ({
+        label: s.type,
+        weight: s.hours,
+        value: fmt.one(s.hours) + "h",
+        sub: s.count + (s.count === 1 ? " session" : " sessions"),
+      })));
+    }
+
+    if (w.clock) {
+      const p = panel(r, "e", 7, "When you show up");
+      html("h2", "headline", p, w.clock.archetype);
+      html("p", "say", p,
+        w.clock.peak_label + " is your hour — " + w.clock.peak_count +
+        " sessions started right there. Across the whole year you head out " +
+        "around " + w.clock.mean + ".");
+      strip(p, w.clock.hours.map(h => ({
+        value: h.count,
+        title: h.label + ":00 — " + h.count + (h.count === 1 ? " session" : " sessions"),
+      })), w.clock.hours.map(h => h.hour % 3 === 0 ? h.label : null));
+      facts(p, [
+        {k: "Earliest start", v: w.clock.earliest.clock,
+         d: w.clock.earliest.type + " · " + fmt.day(w.clock.earliest.date)},
+        {k: "Latest start", v: w.clock.latest.clock,
+         d: w.clock.latest.type + " · " + fmt.day(w.clock.latest.date)},
+      ]);
+    }
+  }
+
+  /* ---- the only scores you gave yourself ---- */
+  if (w.feel) {
+    const f = w.feel;
+    const p = panel(row(), "b", 12, "How it felt");
+    /* a five-way split over this many sessions ties often enough that the
+       headline has to handle it -- "you said normal most" is simply untrue
+       when strong matched it exactly */
+    const quoted = labels => "“" + labels.map(l => l.toLowerCase()).join("” and “") + "”";
+    html("h2", "headline", p, f.tied.length
+      ? "Dead even between " + quoted(f.tied)
+      : quoted([f.top.label]) + " was your mood of the year");
+    html("p", "say", p,
+      (f.tied.length
+        ? f.top.count + " sessions apiece came back " + quoted(f.tied) + " — " +
+          f.top_share + "% each, out of the " + f.felt + " you rated. "
+        : f.top.count + " of the " + f.felt + " sessions you rated came back " +
+          quoted([f.top.label]) + " — " + f.top_share + "% of them. ") +
+      /* when "strong" is itself the headline figure, restating it as
+         "x% felt strong or better" is the same number twice */
+      (f.tied.includes("Strong") || f.top.label === "Strong" ? ""
+        : "And " + f.strong_share + "% felt strong or better. ") +
+      (f.avg_rpe ? "Average effort score: " + f.avg_rpe + " out of 10." : ""));
+    strip(p, f.rows.map(r2 => ({
+      value: r2.count,
+      title: r2.label + " — " + r2.count + (r2.count === 1 ? " session" : " sessions"),
+    })), f.rows.map(r2 => r2.short));
+    facts(p, [
+      ...f.hardest.map(h => ({
+        k: "Rated " + h.rpe + " / 10", v: fmt.day(h.date), d: h.name,
+      })),
+      /* the sessions you skipped the prompt on are named rather than hidden,
+         so the percentages above are read against the right denominator */
+      {k: "Rated at all", v: f.rated + " of " + f.total,
+       d: "the rest you left blank"},
+    ]);
+  }
+
+  /* ---- weekday rhythm + month by month ---- */
+  {
+    const r = row();
+
+    {
+      const wd = w.weekdays;
+      const p = panel(r, "d", 5, "Your week has a shape");
+      html("h2", "headline", p, wd.best.name + " is your day");
+      html("p", "say", p,
+        wd.best.count + " sessions landed on it. " + wd.quietest.name +
+        " was the quiet one, with " + wd.quietest.count + ".");
+      strip(p, wd.rows.map(d => ({
+        value: d.count,
+        title: d.name + " — " + d.count + (d.count === 1 ? " session" : " sessions") +
+               ", " + fmt.one(d.hours) + "h",
+      })), wd.rows.map(d => d.short));
+    }
+
+    {
+      const p = panel(r, "c", 7, "Month by month");
+      if (w.biggest_month) {
+        html("h2", "headline", p, w.biggest_month.long + " was your biggest");
+        html("p", "say", p,
+          fmt.one(w.biggest_month.hours) + " hours across " + w.biggest_month.count +
+          " sessions and " + fmt.one(w.biggest_month.km) + " km. Peak you.");
+      }
+      /* Two months share the label "Oct" on a rolling 12-month window, so the
+         highlight is matched on date. */
+      strip(p, w.months.map(m => ({
+        value: m.hours,
+        title: m.long + " — " + fmt.one(m.hours) + "h, " + fmt.one(m.km) + " km",
+      })), w.months.map(m => m.label),
+        w.biggest_month
+          ? w.months.findIndex(m => m.date === w.biggest_month.date)
+          : undefined);
+      if (w.biggest_week) {
+        html("p", "say", p,
+          "Your biggest single week kicked off " + fmt.day(w.biggest_week.date) +
+          ": " + fmt.one(w.biggest_week.km) + " km across " +
+          w.biggest_week.count +
+          (w.biggest_week.count === 1 ? " session." : " sessions."));
+      }
+    }
+  }
+
+  /* ---- what the hours were actually spent on ---- */
+  if (w.effort_mix) {
+    const m = w.effort_mix;
+    const p = panel(row(), "e", 12, "What kind of year it was");
+    html("h2", "headline", p, m.easy_share + "% of it was easy");
+    html("p", "say", p,
+      fmt.one(m.hours) + " hours with a heart rate on record. Zones 1 and 2 " +
+      "ate " + fmt.one(m.easy_hours) + " of them, and only " + m.hard_label +
+      " sat at threshold or above.");
+    strip(p, m.zones.map(z => ({
+      value: z.hours,
+      title: z.zone + " · " + z.name + " — " + fmt.one(z.hours) + "h (" + z.share + "%)",
+    })), m.zones.map(z => z.short));
+    facts(p, [
+      {k: "Most time in", v: m.top.zone,
+       d: m.top.name.toLowerCase() + " · " + fmt.one(m.top.hours) + "h"},
+      {k: "At threshold or above", v: m.hard_label,
+       d: "zones 4 and 5 together"},
+      /* Garmin's own read on what each session trained -- not our inference */
+      ...m.labels.slice(0, 2).map(l => ({
+        k: "Garmin's label", v: l.label,
+        d: "on " + l.count + (l.count === 1 ? " session" : " sessions"),
+      })),
+    ]);
+  }
+
+  /* ---- the totals, restated in units you can picture ---- */
+  if (w.comparisons.length) {
+    const p = panel(row(), "d", 12, "Put another way");
+    html("h2", "headline", p, "It all adds up");
+    const grid = html("div", "compare", p);
+    w.comparisons.forEach(c => {
+      const tile = html("div", "cmp", grid);
+      html("div", "v", tile, c.value);
+      html("div", "u", tile, c.unit);
+      html("div", "l", tile, c.label + " — " + c.detail);
+    });
+  }
+
+  /* ---- sleep + showing up ---- */
+  {
+    const r = row();
+
+    if (w.sleep) {
+      const p = panel(r, "a", 6, "Your nights");
+      const split = html("div", "panel-split", p);
+      const left = html("div", null, split);
+      html("h2", "headline", left, w.sleep.bedtime + " → " + w.sleep.waketime);
+      html("p", "say", left,
+        "That's your average night across " + w.sleep.nights + " of them: " +
+        fmt.one(w.sleep.avg_hours) + " hours, scoring " + w.sleep.avg_score +
+        " out of 100." + (w.sleep.verdict
+          ? " Garmin called " + w.sleep.verdict.count + " of them “" +
+            w.sleep.verdict.text + "”."
+          : ""));
+      sleepArc(html("div", "arc", split), w.sleep);
+      facts(p, [
+        w.sleep.best && {k: "Best night", v: w.sleep.best.score + " / 100",
+                         d: fmt.one(w.sleep.best.hours) + "h · " + fmt.day(w.sleep.best.date)},
+        w.sleep.longest && {k: "Longest night", v: fmt.one(w.sleep.longest.hours) + "h",
+                            d: fmt.day(w.sleep.longest.date)},
+      ]);
+    }
+
+    {
+      const s = w.streaks;
+      const p = panel(r, "f", 6, "Showing up");
+      bignum(p, s.active_days, 0, "active days");
+      html("p", "say", p,
+        s.share + "% of the year has something on it. The other " +
+        s.rest_days + " days were rest — and rest is training too.");
+      facts(p, [
+        {k: "Longest streak", v: s.longest_streak + (s.longest_streak === 1 ? " day" : " days"),
+         d: "ending " + fmt.day(s.longest_streak_end)},
+        {k: "Longest break", v: s.longest_rest + (s.longest_rest === 1 ? " day" : " days"),
+         d: "ending " + fmt.day(s.longest_rest_end)},
+        s.busiest && {k: "Busiest day", v: s.busiest.minutes + " min",
+                      d: (s.busiest.kinds.join(", ") || "training") + " · " + fmt.day(s.busiest.date)},
+      ]);
+    }
+  }
+
+  /* ---- what it cost + where it happened ---- */
+  if (w.cost || w.places) {
+    const r = row();
+
+    if (w.cost) {
+      const c = w.cost;
+      const p = panel(r, "b", 6, "What it cost");
+      bignum(p, c.total, 0, "battery points");
+      html("p", "say", p,
+        "That's what training drained out of you across " + c.sessions +
+        " sessions — " + c.avg + " points on an average one." +
+        (c.charged ? " Sleep and rest handed back " + fmt.int(c.charged) +
+                     " over the same year." : ""));
+      facts(p, [
+        {k: "Biggest single drain", v: "−" + c.worst.value,
+         d: c.worst.name + " · " + fmt.day(c.worst.date)},
+        c.charged && {k: "Recharged per day", v: "+" + c.charged_avg,
+                      d: "averaged over " + c.charged_days + " days"},
+      ]);
+    }
+
+    if (w.places) {
+      const pl = w.places;
+      const p = panel(r, "c", 6, "Where you showed up");
+      html("h2", "headline", p, pl.home.name + " is home turf");
+      html("p", "say", p,
+        pl.home.count + " of the " + pl.tagged + " sessions carrying a location " +
+        "happened right there — " + pl.home_share + "%. The other " +
+        pl.away_sessions + " were spread across " + pl.away_places +
+        (pl.away_places === 1 ? " other place." : " other places."));
+      rankList(p, pl.rows.map(place => ({
+        label: place.name,
+        weight: place.hours,
+        value: fmt.one(place.hours) + "h",
+        sub: place.count + (place.count === 1 ? " session" : " sessions"),
+      })));
+      facts(p, [
+        {k: "Places in total", v: fmt.int(pl.places), d: "that the watch put a name to"},
+        pl.biggest_away && {k: "Longest away from home",
+                            v: fmt.one(pl.biggest_away.hours) + "h",
+                            d: pl.biggest_away.name},
+        /* indoor sessions never get tagged, so the denominator above is not
+           the whole year -- say so rather than letting 89% read as 89% */
+        pl.untagged && {k: "Untagged", v: fmt.int(pl.untagged),
+                        d: "mostly indoors · not counted above"},
+      ]);
+    }
+  }
+
+  /* ---- one-line extremes ----
+     This panel and the one after it both say "record" and mean different
+     things, which is exactly the confusion worth heading off: these are
+     worked out here, from the sessions inside this one year. */
+  if (w.superlatives.length) {
+    const p = panel(row(), "e", 12, "Best of these 12 months");
+    html("h2", "headline", p, "The ones that stood out");
+    /* both the session count and the window are optional upstream, so the
+       sentence is assembled from whichever of them is actually there */
+    const scope = (w.opening ? "Your " + fmt.int(w.opening.sessions) +
+                               " sessions" : "Every session") +
+                  (DATA.meta ? " since " + fmt.day(DATA.meta.start) : "");
+    html("p", "say", p,
+      scope + ", sorted one measure at a time — every line is the one " +
+      "session that won it. Counted straight from your sessions here, not " +
+      "read off the watch's own list of bests.");
+    facts(p, w.superlatives.map(s => ({
+      k: s.label, v: s.value, d: s.detail + (s.note ? " · " + s.note : ""),
+    })));
+  }
+
+  /* ---- what the watch itself called a record ---- */
+  if (w.prs.length) {
+    const beaten = w.prs.reduce((n, r2) => n + r2.records.length, 0);
+    const p = panel(row(), "f", 12, "Personal bests broken");
+    html("h2", "headline", p,
+      beaten === 1 ? "One personal best fell"
+                   : beaten + " personal bests fell");
+    /* The watch flags the session, not the record. Naming the distances is
+       our inference from the splits -- say that in one line, not three. */
+    html("p", "say", p,
+      "Garmin stamped " + (w.prs.length === 1 ? "one session"
+                                              : w.prs.length + " sessions") +
+      " this year as beating your standing bests. It never says which one " +
+      "fell, so these are the distances those sessions lead on — your " +
+      "fastest, across everything here.");
+    prList(p, w.prs);
+  }
+
+  /* ---- the badge, last ---- */
+  if (w.personality) {
+    const p = panel(row(), "d", 12, "Your training personality");
+    html("div", "badge-ring", p, "The verdict");
+    html("h2", "headline", p, w.personality.title);
+    html("p", "say", p, w.personality.blurb);
+    facts(p, w.personality.traits.map(t => ({k: t.key, v: t.value, d: t.detail})));
+  }
+}
+
+/* ======================================================================
+   Instagram export
+
+   Each story panel can be saved as a square-ish PNG card. The whole thing
+   is done with what the browser already has: the panel is cloned into a
+   fixed-size card, the card is serialised into an SVG <foreignObject>, and
+   the SVG is drawn onto a canvas. No library, no network request, so the
+   page keeps working straight off the filesystem.
+
+   Nothing on the page references an external image -- every texture here is
+   a CSS gradient -- so the canvas never gets tainted and toBlob works.
+   ====================================================================== */
+
+/* `max` is how far the fit loop may enlarge a panel that does not fill its
+   card on its own. A 9:16 story is half as tall again as a feed post, so a
+   short panel left at 1:1 floats in a field of empty colour -- it gets the
+   generous ceiling, the post only enough to take up the slack. */
+const FORMATS = {
+  post:  {w: 1080, h: 1350, label: "Post 4:5", max: 1.25},
+  story: {w: 1080, h: 1920, label: "Story 9:16", cls: "story", max: 1.9},
+};
+/* rasterise at twice the nominal size and let Instagram downscale: at 1:1 a
+   900-weight headline comes out noticeably soft */
+const SHOT_SCALE = 2;
+let shotFormat = "post";
+
+/* captured once, before anything is cloned into the document */
+const PAGE_CSS = $("#pageCss").textContent;
+
+/* The live panels are animation-gated: until the observer reaches one its
+   opacity is 0, its bars have no height and its counters still read "0". A
+   clone therefore has to be walked forward to its finished state by hand,
+   or panels below the fold export blank. */
+function settle(node) {
+  node.classList.remove("reveal");
+  node.classList.add("in");
+  node.querySelectorAll(".reveal").forEach(n => {
+    n.classList.remove("reveal");
+    n.classList.add("in");
+  });
+  node.querySelectorAll("[data-grow]").forEach(n => {
+    n.style[n.dataset.axis || "height"] = n.dataset.grow;
+  });
+  node.querySelectorAll("[data-count]").forEach(n => {
+    const digits = Number(n.dataset.digits || 0);
+    n.textContent = Number(n.dataset.count).toLocaleString("en-US",
+      {minimumFractionDigits: digits, maximumFractionDigits: digits}) +
+      (n.dataset.suffix || "");
+  });
+  node.querySelectorAll(".shot-btn").forEach(n => n.remove());
+  return node;
+}
+
+/* Build the card off-screen and fit the panel into it. The panel is laid out
+   at `stage width / k` and then scaled by k, so a panel with more copy than
+   fits simply comes out at a smaller type size rather than being cropped. */
+function buildCard(panel, index, total) {
+  const f = FORMATS[shotFormat];
+  const card = html("div", "ig-card" + (f.cls ? " " + f.cls : ""));
+  card.style.width = f.w + "px";
+  card.style.height = f.h + "px";
+
+  const head = html("div", "ig-head", card);
+  const mark = html("div", "ig-mark", head, "rewind ");
+  html("em", null, mark, "garmin");
+  html("div", "ig-range", head, DATA.meta
+    ? fmt.day(DATA.meta.start) + " – " + fmt.day(DATA.meta.end) : "");
+
+  const stage = html("div", "ig-stage", card);
+  const scaler = html("div", "ig-scale", stage);
+  const clone = settle(panel.cloneNode(true));
+  scaler.appendChild(clone);
+
+  const foot = html("div", "ig-foot", card);
+  html("div", null, foot, (index + 1) + " / " + total);
+  const dots = html("div", "ig-dots", foot);
+  for (let i = 0; i < total; i++) html("i", i === index ? "on" : null, dots);
+
+  $("#shotStage").appendChild(card);
+
+  const stageW = stage.clientWidth, stageH = stage.clientHeight;
+
+  /* Fit the panel to the card by laying it out at `stage width / k` and then
+     scaling it by k. k < 1 is the overflow case -- more copy than fits, so it
+     comes out at a smaller type size rather than cropped. k > 1 is the
+     opposite and the more common one: a four-line panel on a 9:16 story has
+     room to spare, so it is laid out narrower and enlarged into the gap.
+
+     Each pass measures the panel's natural height at the current layout width
+     and asks what scale would make it exactly fill. Widening the layout makes
+     it shorter, which asks for a bigger scale, which narrows it again -- so
+     the step is halved to damp the swing, and six passes settle it. */
+  const measure = width => {
+    scaler.style.width = width + "px";
+    clone.style.minHeight = "0px";
+    return scaler.offsetHeight;
+  };
+  const clamp = v => Math.min(f.max, Math.max(0.3, v));
+
+  let k = 1, natural = measure(stageW);
+  for (let pass = 0; pass < 6; pass++) {
+    const want = clamp(stageH / natural);
+    const next = pass === 0 ? want : k + (want - k) / 2;
+    if (Math.abs(next - k) < 0.01) break;
+    k = next;
+    natural = measure(stageW / k);
+  }
+  /* the damping can leave k a shade too generous, which would crop; the
+     natural height is already measured at this layout, so settle it exactly */
+  if (natural * k > stageH) k = clamp(stageH / natural);
+
+  scaler.style.width = (stageW / k) + "px";
+  clone.style.minHeight = (stageH / k) + "px";
+  scaler.style.transform = "scale(" + k + ")";
+
+  return card;
+}
+
+/* The SVG is parsed as XML, so this has to be XMLSerializer output rather
+   than innerHTML -- a single unescaped `&` from the copy would make the
+   image fail to decode, silently, with a blank canvas as the only symptom. */
+function serializeCard(card, w, h) {
+  const style = document.createElement("style");
+  style.textContent = PAGE_CSS;
+  card.insertBefore(style, card.firstChild);
+  card.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
+  const body = new XMLSerializer().serializeToString(card);
+  style.remove();
+  card.removeAttribute("xmlns");
+
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="' + (w * SHOT_SCALE) +
+         '" height="' + (h * SHOT_SCALE) + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+         '<foreignObject x="0" y="0" width="' + w + '" height="' + h + '">' +
+         body + '</foreignObject></svg>';
+}
+
+function rasterise(svgText, w, h) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = w * SHOT_SCALE;
+      canvas.height = h * SHOT_SCALE;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(blob => blob ? resolve(blob)
+                                 : reject(new Error("canvas produced no blob")),
+                    "image/png");
+    };
+    img.onerror = () => reject(new Error("the card did not decode as an image"));
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgText);
+  });
+}
+
+function shotName(panel, index) {
+  const label = ($(".eyebrow", panel) || $(".headline", panel) || {}).textContent || "card";
+  const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+                    .replace(/^-|-$/g, "").slice(0, 40);
+  return "rewind-" + String(index + 1).padStart(2, "0") + "-" + (slug || "card") +
+         "-" + shotFormat + ".png";
+}
+
+/* On a phone the share sheet is the useful destination -- it hands the PNG
+   straight to Instagram. Everywhere else, a plain download. */
+async function deliver(blob, name) {
+  const file = new File([blob], name, {type: "image/png"});
+  if (matchMedia("(pointer: coarse)").matches &&
+      navigator.canShare && navigator.canShare({files: [file]})) {
+    try { await navigator.share({files: [file]}); return; }
+    catch (err) { if (err && err.name === "AbortError") return; }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+async function exportPanel(panel, index, total) {
+  const f = FORMATS[shotFormat];
+  let card;
+  try {
+    card = buildCard(panel, index, total);
+    const blob = await rasterise(serializeCard(card, f.w, f.h), f.w, f.h);
+    await deliver(blob, shotName(panel, index));
+  } finally {
+    /* the staging node is off-screen, so a card left behind would be
+       invisible and permanent */
+    if (card) card.remove();
+  }
+}
+
+function withBusyButton(btn, label, work) {
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = label;
+  return work().then(() => { btn.textContent = original; },
+                     err => {
+                       console.error(err);
+                       btn.textContent = "Failed";
+                       setTimeout(() => { btn.textContent = original; }, 2200);
+                     })
+               .then(() => { btn.disabled = false; });
+}
+
+function wireExport() {
+  const panels = Array.prototype.slice.call(document.querySelectorAll(".panel"));
+  const total = panels.length;
+
+  panels.forEach((panel, i) => {
+    /* appended last and absolutely positioned, the way `doodle()` is, so it
+       neither joins the column flow nor shifts the stagger delays */
+    const btn = html("button", "shot-btn", panel, "Save");
+    btn.type = "button";
+    btn.title = "Save this panel as an Instagram card";
+    btn.addEventListener("click", () =>
+      withBusyButton(btn, "…", () => exportPanel(panel, i, total)));
+  });
+
+  const formatBtn = $("#shotFormat");
+  formatBtn.textContent = FORMATS[shotFormat].label;
+  formatBtn.addEventListener("click", () => {
+    shotFormat = shotFormat === "post" ? "story" : "post";
+    formatBtn.textContent = FORMATS[shotFormat].label;
+  });
+
+  $("#shotAll").addEventListener("click", function () {
+    const btn = this;
+    withBusyButton(btn, "Saving 1/" + total, async () => {
+      for (let i = 0; i < total; i++) {
+        btn.textContent = "Saving " + (i + 1) + "/" + total;
+        await exportPanel(panels[i], i, total);
+        /* browsers rate-limit back-to-back downloads from one gesture */
+        await new Promise(r => setTimeout(r, 400));
+      }
+    });
+  });
+}
+
+/* ---------------------------- theme ---------------------------- */
+const toggle = $("#themeToggle");
+function currentlyDark() {
+  const stamped = document.documentElement.getAttribute("data-theme");
+  if (stamped) return stamped === "dark";
+  return matchMedia("(prefers-color-scheme: dark)").matches;
+}
+function syncToggleLabel() {
+  toggle.textContent = currentlyDark() ? "Light mode" : "Dark mode";
+}
+toggle.addEventListener("click", () => {
+  document.documentElement.setAttribute("data-theme", currentlyDark() ? "light" : "dark");
+  syncToggleLabel();
+});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if (!document.documentElement.getAttribute("data-theme")) syncToggleLabel();
+});
+
+syncToggleLabel();
+renderStory();
+wireExport();
+/* the squiggles need the finished page height, so they go last -- and once
+   more after layout settles, because the panels start out translated */
+drawSquiggles();
+requestAnimationFrame(drawSquiggles);
+addEventListener("load", drawSquiggles);
+</script>
+</body>
+</html>
