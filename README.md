@@ -18,11 +18,6 @@ the dashboard is a single file in `out/`. Both are gitignored.
    Copy-Item .env.example .env
    ```
 
-   Don't set it with `$env:GARMIN_PERSONAL_API_KEY="..."` or `echo` — PowerShell
-   logs every command you type to
-   `%APPDATA%\Microsoft\Windows\PowerShell\PSReadline\ConsoleHost_history.txt`,
-   which no `.gitignore` covers.
-
 3. Install dependencies:
 
    ```powershell
