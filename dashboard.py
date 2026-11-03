@@ -20,6 +20,7 @@ import webbrowser
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from statistics import pstdev
 
 ROOT = Path(__file__).parent
 DATA_FILE = ROOT / "data" / "garmin.json"
@@ -1163,6 +1164,320 @@ def build_effort_mix(activities):
     }
 
 
+# Garmin counts a vigorous minute twice toward the weekly target, so the
+# weighted sum -- not the raw one -- is the number the watch shows you.
+INTENSITY_GOAL = 150
+
+
+def build_intensity(summaries, start, end):
+    """Weekly intensity minutes against the 150-a-week target.
+
+    The only figure in this deck measured against something outside you: the
+    WHO guideline Garmin ships as the default goal. Weeks the window only
+    partly covers are drawn but never judged -- a Thursday-to-Sunday stub
+    cannot miss a weekly target it was never given seven days to meet.
+    """
+    by_day = {}
+    for day in summaries:
+        minutes = day.get("intensityMinutes") or {}
+        by_day[day["calendarDate"][:10]] = (
+            minutes.get("moderate") or 0,
+            minutes.get("vigorous") or 0,
+            minutes.get("goal") or INTENSITY_GOAL,
+        )
+    if not by_day:
+        return None
+
+    weeks = []
+    cursor = start - timedelta(days=start.weekday())
+    while cursor <= end:
+        days = [cursor + timedelta(days=offset) for offset in range(7)]
+        rows = [by_day[d.isoformat()] for d in days if d.isoformat() in by_day]
+        moderate = sum(r[0] for r in rows)
+        vigorous = sum(r[1] for r in rows)
+        goal = rows[0][2] if rows else INTENSITY_GOAL
+        weeks.append({
+            "date": cursor.isoformat(),
+            "label": cursor.strftime("%d %b"),
+            "moderate": moderate,
+            "vigorous": vigorous,
+            "total": moderate + 2 * vigorous,
+            "goal": goal,
+            "whole": days[0] >= start and days[6] <= end,
+        })
+        cursor += timedelta(days=7)
+
+    judged = [w for w in weeks if w["whole"]]
+    # A watch that barely records intensity minutes still hands back a goal and
+    # a row of near-zeroes, which would otherwise render as a confident "you
+    # averaged 1, clearing it in 0 of 52 weeks". A panel about meeting a weekly
+    # target needs most weeks to have been measured at all before it means
+    # anything, so the gate is coverage rather than a non-zero sum.
+    measured = sum(1 for w in judged if w["total"])
+    if len(judged) < 12 or measured * 2 < len(judged):
+        return None
+
+    hit = [w for w in judged if w["total"] >= w["goal"]]
+    # The longest unbroken run of on-target weeks, which is a different claim
+    # from how many there were -- 20 scattered weeks is not a habit.
+    best_run = run = 0
+    for week in judged:
+        run = run + 1 if week["total"] >= week["goal"] else 0
+        best_run = max(best_run, run)
+
+    total_moderate = sum(w["moderate"] for w in weeks)
+    total_vigorous = sum(w["vigorous"] for w in weeks)
+    peak = max(weeks, key=lambda w: w["total"])
+    return {
+        "weeks": weeks,
+        "goal": judged[0]["goal"],
+        "weeks_judged": len(judged),
+        "weeks_hit": len(hit),
+        "hit_share": round(100 * len(hit) / len(judged)),
+        "best_run": best_run,
+        "avg": round(sum(w["total"] for w in judged) / len(judged)),
+        "moderate": total_moderate,
+        "vigorous": total_vigorous,
+        "total": total_moderate + 2 * total_vigorous,
+        "peak": peak if peak["total"] else None,
+        "peak_index": weeks.index(peak) if peak["total"] else None,
+        "quiet_weeks": sum(1 for w in judged if not w["total"]),
+    }
+
+
+# Garmin's aerobic training-effect scale, as the watch itself bands it. The
+# upper bound is exclusive; 5.0 is the top of the scale, not a sixth band.
+TE_BANDS = [
+    (1.0, "No benefit", "None"),
+    (2.0, "Minor benefit", "Minor"),
+    (3.0, "Maintaining", "Maintain"),
+    (4.0, "Improving", "Improve"),
+    (5.1, "Highly improving", "High"),
+]
+# A session needs this much anaerobic effect before Garmin credits it with any.
+ANAEROBIC_FLOOR = 1.0
+
+
+def clean_effect_message(text):
+    """Strip the trailing id off an effect message: IMPROVING_AEROBIC_BASE_8."""
+    head, _, tail = text.rpartition("_")
+    cleaned = head if head and tail.isdigit() else text
+    return cleaned.replace("_", " ").capitalize()
+
+
+def build_training_effect(activities):
+    """What each session did to you physiologically, in Garmin's own terms.
+
+    Training effect is a per-session score on a 0-5 scale, not a quantity that
+    adds up, so this counts sessions per band rather than summing anything.
+    """
+    scored = [a for a in activities if a.get("aerobicTrainingEffect")]
+    if len(scored) < 15:
+        return None
+
+    bands = [{"label": label, "short": short, "count": 0}
+             for _, label, short in TE_BANDS]
+    for act in scored:
+        value = act["aerobicTrainingEffect"]
+        for index, (ceiling, _, _) in enumerate(TE_BANDS):
+            if value < ceiling:
+                bands[index]["count"] += 1
+                break
+
+    # "Productive" is everything from maintaining upward -- the sessions that
+    # held or moved your aerobic base rather than just passing the time.
+    productive = sum(b["count"] for b in bands[2:])
+    anaerobic = [a for a in scored
+                 if (a.get("anaerobicTrainingEffect") or 0) >= ANAEROBIC_FLOOR]
+
+    messages = Counter(clean_effect_message(a["aerobicTrainingEffectMessage"])
+                       for a in scored if a.get("aerobicTrainingEffectMessage"))
+    top_band = max(bands, key=lambda b: b["count"])
+    peak = max(scored, key=lambda a: a["aerobicTrainingEffect"])
+    return {
+        "bands": bands,
+        "band_index": bands.index(top_band),
+        "top_band": top_band,
+        "scored": len(scored),
+        "unscored": len(activities) - len(scored),
+        "avg": round(sum(a["aerobicTrainingEffect"] for a in scored) / len(scored), 1),
+        "productive": productive,
+        "productive_share": round(100 * productive / len(scored)),
+        "anaerobic": len(anaerobic),
+        "anaerobic_share": round(100 * len(anaerobic) / len(scored)),
+        "messages": [{"label": label, "count": count}
+                     for label, count in messages.most_common(3)],
+        "peak": {
+            "value": round(peak["aerobicTrainingEffect"], 1),
+            "name": activity_name(peak),
+            "date": peak["startTimeLocal"][:10],
+            "message": clean_effect_message(peak["aerobicTrainingEffectMessage"])
+                       if peak.get("aerobicTrainingEffectMessage") else None,
+        },
+    }
+
+
+# Below this many nights on either side of the split the comparison is two
+# small samples staring at each other.
+RECOVERY_MIN_NIGHTS = 40
+# How far apart the two groups must sit before the gap is called a direction
+# rather than noise: half the week-to-week spread of the measure itself.
+RECOVERY_NOISE_FRACTION = 0.5
+
+
+def build_recovery(weekly, hrv, sleep):
+    """Whether the big training weeks cost you anything overnight.
+
+    Weeks are split into the heaviest third and the rest, then each group is
+    described by the nights inside it. Nothing here is a causal claim and the
+    direction is read off the data rather than assumed -- a year where the big
+    weeks slept *better* gets the same panel, saying so.
+    """
+    trained = [w for w in weekly if w["hours"] > 0]
+    if len(trained) < 12:
+        return None
+
+    status_by_day = {h["calendarDate"][:10]: (h.get("status") or "").upper()
+                     for h in hrv if h.get("status")}
+    score_by_day = {}
+    for night in sleep:
+        score = ((night.get("sleepScores") or {}).get("overall") or {}).get("value")
+        if score:
+            score_by_day[night["calendarDate"][:10]] = score
+
+    def nights_of(week):
+        monday = parse_day(week["date"])
+        days = [(monday + timedelta(days=offset)).isoformat() for offset in range(7)]
+        return ([status_by_day[d] for d in days if d in status_by_day],
+                [score_by_day[d] for d in days if d in score_by_day])
+
+    def describe(weeks):
+        statuses, scores = [], []
+        for week in weeks:
+            week_statuses, week_scores = nights_of(week)
+            statuses.extend(week_statuses)
+            scores.extend(week_scores)
+        off = [s for s in statuses if s and s != "BALANCED"]
+        return {
+            "weeks": len(weeks),
+            "avg_hours": round(mean([w["hours"] for w in weeks]) or 0, 1),
+            "avg_km": round(mean([w["km"] for w in weeks]) or 0, 1),
+            "nights": len(statuses),
+            "off_balance": len(off),
+            "off_share": round(100 * len(off) / len(statuses)) if statuses else None,
+            "scored_nights": len(scores),
+            "sleep_score": round(mean(scores)) if scores else None,
+        }
+
+    ordered = sorted(trained, key=lambda w: -w["hours"])
+    cut = max(4, len(ordered) // 3)
+    big, quiet = describe(ordered[:cut]), describe(ordered[cut:])
+    if (big["nights"] < RECOVERY_MIN_NIGHTS or quiet["nights"] < RECOVERY_MIN_NIGHTS
+            or big["off_share"] is None or quiet["off_share"] is None):
+        return None
+
+    # The yardstick for "is this gap real" is the measure's own week-to-week
+    # spread, not a number picked here.
+    per_week = []
+    for week in trained:
+        week_statuses, _ = nights_of(week)
+        if week_statuses:
+            off = [s for s in week_statuses if s != "BALANCED"]
+            per_week.append(100.0 * len(off) / len(week_statuses))
+    noise = pstdev(per_week) if len(per_week) > 1 else 0.0
+    gap = big["off_share"] - quiet["off_share"]
+    threshold = max(5.0, RECOVERY_NOISE_FRACTION * noise)
+    direction = "flat" if abs(gap) < threshold else ("worse" if gap > 0 else "better")
+
+    sleep_gap = None
+    if big["sleep_score"] is not None and quiet["sleep_score"] is not None:
+        sleep_gap = big["sleep_score"] - quiet["sleep_score"]
+    return {
+        "big": big,
+        "quiet": quiet,
+        "gap": round(gap),
+        "sleep_gap": sleep_gap,
+        "direction": direction,
+        "threshold": round(threshold),
+        "statuses": [{"label": key.title(), "count": count}
+                     for key, count in Counter(
+                         s for s in status_by_day.values() if s).most_common()],
+    }
+
+
+# A dead panel is worse than a missing one, so form needs a real running year
+# behind it before it earns a place in the deck.
+FORM_MIN_RUNS = 12
+FORM_FIELDS = [
+    ("averageRunningCadenceInStepsPerMinute", "Cadence", "spm", 0),
+    ("avgStrideLength", "Stride length", "cm", 0),
+    ("avgGroundContactTime", "Ground contact", "ms", 0),
+    ("avgVerticalOscillation", "Vertical bounce", "cm", 1),
+]
+
+
+def build_form(activities):
+    """Running form, for the years that have enough running in them.
+
+    The halves are reported because the trend is the interesting part, but
+    they are not a claim about form: a half with more treadmill work or more
+    tempo work in it moves these numbers on composition alone, so the share of
+    each is carried alongside and the copy says so.
+    """
+    runs = [a for a in activities
+            if a["activityType"]["typeKey"] in RUN_TYPES
+            and a.get("averageRunningCadenceInStepsPerMinute")]
+    if len(runs) < FORM_MIN_RUNS:
+        return None
+
+    runs.sort(key=lambda a: a["startTimeLocal"])
+    midpoint = len(runs) // 2
+    halves = [runs[:midpoint], runs[midpoint:]]
+
+    def treadmill_share(group):
+        indoor = sum(1 for a in group if "treadmill" in a["activityType"]["typeKey"])
+        return round(100 * indoor / len(group)) if group else 0
+
+    metrics = []
+    for field, label, unit, digits in FORM_FIELDS:
+        values = [a[field] for a in runs if a.get(field)]
+        if len(values) < FORM_MIN_RUNS:
+            continue
+        first, second = [
+            mean([a[field] for a in half if a.get(field)]) for half in halves
+        ]
+        metrics.append({
+            "label": label,
+            "unit": unit,
+            "value": round(mean(values), digits),
+            "low": round(min(values), digits),
+            "high": round(max(values), digits),
+            "first": round(first, digits) if first is not None else None,
+            "second": round(second, digits) if second is not None else None,
+            "change": (round(second - first, digits)
+                       if first is not None and second is not None else None),
+        })
+    if not metrics:
+        return None
+
+    return {
+        "runs": len(runs),
+        "metrics": metrics,
+        "cadence": metrics[0],
+        "first_half": {
+            "count": len(halves[0]),
+            "treadmill_share": treadmill_share(halves[0]),
+            "until": halves[0][-1]["startTimeLocal"][:10] if halves[0] else None,
+        },
+        "second_half": {
+            "count": len(halves[1]),
+            "treadmill_share": treadmill_share(halves[1]),
+            "from": halves[1][0]["startTimeLocal"][:10] if halves[1] else None,
+        },
+        "indoor_share": treadmill_share(runs),
+    }
+
+
 def build_personality(activities, clock, weekdays, streaks, summaries):
     """A badge assembled from the three things the data says most loudly.
 
@@ -1251,6 +1566,10 @@ def build_wrapped(bundle, activities, summaries, sleep, calendar, weekly, start,
         "clock": clock,
         "feel": build_feel(activities),
         "effort_mix": build_effort_mix(activities),
+        "intensity": build_intensity(summaries, start, end),
+        "training_effect": build_training_effect(activities),
+        "recovery": build_recovery(weekly, bundle["hrv"], sleep),
+        "form": build_form(activities),
         "weekdays": weekdays,
         "months": months,
         "biggest_month": biggest_month if biggest_month and biggest_month["count"] else None,

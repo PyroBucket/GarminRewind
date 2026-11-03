@@ -1473,6 +1473,134 @@ function renderStory() {
     ]);
   }
 
+  /* ---- the only target that didn't come from you ----
+     Every other number in this deck is measured against the rest of your own
+     year. This one has an outside yardstick, which is the whole reason it
+     earns a panel: 150 minutes a week is the WHO guideline Garmin ships as
+     the default goal, and it means the same thing to everyone. */
+  if (w.intensity) {
+    const n = w.intensity;
+    const p = panel(row(), "f", 12, "The one target that isn't yours");
+    html("h2", "headline", p,
+      n.weeks_hit === 0
+        ? "You never cleared " + n.goal + " in a week"
+        : n.hit_share + "% of your weeks hit the target");
+    bignum(p, n.avg, 0, "minutes a week");
+    html("p", "say", p,
+      "Garmin's goal is " + n.goal + " intensity minutes a week — the public " +
+      "health guideline, not something your year invented. You averaged " +
+      n.avg + ", clearing it in " + n.weeks_hit + " of the " + n.weeks_judged +
+      " full weeks here. " +
+      /* the doubling is the detail that makes the arithmetic add up, and
+         without it a reader sums the two facts below and gets a third number */
+      "A vigorous minute counts twice toward it, and yours mostly were: " +
+      fmt.int(n.vigorous) + " vigorous against " + fmt.int(n.moderate) +
+      " moderate.");
+    strip(p, n.weeks.map(week => ({
+      value: week.total,
+      title: "Week of " + fmt.day(week.date) + " — " + week.total +
+             " minutes (" + week.moderate + " moderate, " + week.vigorous +
+             " vigorous)" + (week.whole ? "" : " · partial week"),
+    })), n.weeks.map((week, i) => i % 4 === 0 ? week.label : null),
+      n.peak_index);
+    facts(p, [
+      n.peak && {k: "Biggest week", v: n.peak.total + " min",
+                 d: "week of " + fmt.day(n.peak.date)},
+      {k: "Best run on target",
+       v: n.best_run + (n.best_run === 1 ? " week" : " weeks"),
+       d: n.best_run ? "back to back" : "never two in a row"},
+      /* a week at zero is not a gap in the data -- it is a week off, and the
+         average above is dragged down by every one of them */
+      n.quiet_weeks && {k: "Weeks at zero", v: fmt.int(n.quiet_weeks),
+                        d: "nothing the watch counted as intensity"},
+    ]);
+  }
+
+  /* ---- what the sessions did to you, physiologically ----
+     The zone panel above says where the hours went; this says what Garmin
+     thought they achieved. Training effect is per-session and capped at 5, so
+     nothing here is a total -- it is a count of sessions per band. */
+  {
+    const r = row();
+
+    if (w.training_effect) {
+      const t = w.training_effect;
+      const p = panel(r, "b", 7, "What it did to you");
+      html("h2", "headline", p,
+        t.top_band.count + " sessions came back “" +
+        t.top_band.label.toLowerCase() + "”");
+      html("p", "say", p,
+        "Garmin scores every session from 0 to 5 for aerobic training effect. " +
+        "Across the " + t.scored + " it scored, yours averaged " + t.avg +
+        " — and " + t.productive_share + "% of them were maintaining your " +
+        "aerobic base or better." +
+        /* the anaerobic half of the scale is the one most years barely touch,
+           so the number is given plainly rather than dressed up as a finding */
+        (t.anaerobic
+          ? " Only " + t.anaerobic + " did anything anaerobic at all."
+          : " Not one of them registered an anaerobic effect."));
+      strip(p, t.bands.map(b => ({
+        value: b.count,
+        title: b.label + " — " + b.count +
+               (b.count === 1 ? " session" : " sessions"),
+      })), t.bands.map(b => b.short), t.band_index);
+      facts(p, [
+        {k: "Hardest aerobic hit", v: t.peak.value + " / 5",
+         d: t.peak.name + " · " + fmt.day(t.peak.date)},
+        ...t.messages.slice(0, 2).map(m => ({
+          k: "Garmin's verdict", v: m.label,
+          d: "on " + m.count + (m.count === 1 ? " session" : " sessions"),
+        })),
+        /* sessions without a heart rate get no score, so the percentages
+           above are read against 89 sessions and not the whole year */
+        t.unscored && {k: "Unscored", v: fmt.int(t.unscored),
+                       d: "no heart rate · not counted above"},
+      ]);
+    }
+
+    /* Running mechanics, and only for a year with enough running in it --
+       a strength-and-yoga year gets no panel rather than a dead one. */
+    if (w.form) {
+      const f = w.form;
+      const p = panel(r, "a", 5, "How you actually run");
+      bignum(p, f.cadence.value, 0, "steps a minute");
+      html("p", "say", p,
+        "Your average cadence across " + f.runs + " runs, ranging from " +
+        f.cadence.low + " to " + f.cadence.high + ". The watch measures four " +
+        "things about the way you move, and they only mean anything together.");
+      facts(p, f.metrics.map(m => ({
+        k: m.label, v: m.value + " " + m.unit,
+        d: m.low + "–" + m.high + " " + m.unit,
+      })));
+      /* These numbers drift across the year and it would be easy to sell the
+         drift as improving form. It is at least as likely to be the treadmill
+         share moving between the halves, which shifts all four on its own --
+         so the direction is read off the data rather than assumed, and the
+         confound gets named instead of the flattering version. */
+      const movers = f.metrics.filter(m => m.change);
+      const lead = movers.slice().sort(
+        (a, b) => Math.abs(b.change / b.value) - Math.abs(a.change / a.value))[0];
+      if (lead) {
+        const venue = f.first_half.treadmill_share !== f.second_half.treadmill_share;
+        html("p", "say", p,
+          "Between the first half of the year and the second, " +
+          (movers.length === f.metrics.length
+            ? "every one of them moved"
+            : movers.length + " of the " + f.metrics.length + " moved") +
+          " — " + lead.label.toLowerCase() + " most of all, by " +
+          (lead.change > 0 ? "+" + lead.change
+                           : "−" + Math.abs(lead.change)) + " " + lead.unit + ". " +
+          (venue
+            ? "But " + f.first_half.treadmill_share + "% of the first half was " +
+              "on a treadmill against " + f.second_half.treadmill_share +
+              "% of the second, and that alone shifts all four. Read the drift " +
+              "as a change of venue before you read it as a change of form."
+            : "The indoor-to-outdoor mix held steady across both halves, which " +
+              "at least rules out the obvious explanation."));
+      }
+    }
+  }
+
   /* ---- the totals, restated in units you can picture ---- */
   if (w.comparisons.length) {
     const p = panel(row(), "d", 12, "Put another way");
@@ -1527,6 +1655,66 @@ function renderStory() {
                       d: (s.busiest.kinds.join(", ") || "training") + " · " + fmt.day(s.busiest.date)},
       ]);
     }
+  }
+
+  /* ---- did the heavy weeks actually cost you anything ----
+     The one panel that compares two halves of your year against each other
+     rather than reporting a total. Heaviest third of the training weeks
+     against the rest, described by the nights inside them.
+
+     The copy is written from whichever way the data went, including the way
+     it usually goes -- nowhere. A gap smaller than the week-to-week spread of
+     the measure itself is noise, and saying "your big weeks wrecked you" off
+     the back of two points would be inventing a finding. */
+  if (w.recovery) {
+    const rec = w.recovery;
+    const big = rec.big, quiet = rec.quiet;
+    const p = panel(row(), "e", 12, "What the big weeks cost");
+    const headline = {
+      flat: "The heavy weeks cost you nothing",
+      worse: "Your heaviest weeks slept for it",
+      better: "Your heaviest weeks slept better, not worse",
+    }[rec.direction];
+    html("h2", "headline", p, headline);
+    html("p", "say", p,
+      "Your " + big.weeks + " biggest training weeks averaged " +
+      fmt.one(big.avg_hours) + " hours against " + fmt.one(quiet.avg_hours) +
+      " in the other " + quiet.weeks + ". " +
+      (rec.direction === "flat"
+        ? "Overnight, that difference went missing: HRV sat outside its " +
+          "balanced range on " + big.off_share + "% of the nights in the big " +
+          "weeks and " + quiet.off_share + "% of the nights in the quiet ones. " +
+          "A " + Math.abs(rec.gap) + "-point gap, when the week-to-week swing " +
+          "is " + rec.threshold + " — which is another way of saying your body " +
+          "treated a " + fmt.one(big.avg_hours) + "-hour week much like a " +
+          fmt.one(quiet.avg_hours) + "-hour one."
+        : "HRV sat outside its balanced range on " + big.off_share +
+          "% of the nights in those weeks, against " + quiet.off_share +
+          "% in the quiet ones — " + Math.abs(rec.gap) + " points " +
+          (rec.direction === "worse" ? "worse" : "better") + ", which clears " +
+          "the " + rec.threshold + "-point week-to-week swing this measure " +
+          "carries anyway."));
+    strip(p, rec.statuses.map(s => ({
+      value: s.count,
+      title: s.label + " — " + s.count + (s.count === 1 ? " night" : " nights"),
+    })), rec.statuses.map(s => s.label));
+    facts(p, [
+      {k: "Big weeks", v: fmt.one(big.avg_hours) + "h avg",
+       d: big.weeks + " weeks · " + fmt.one(big.avg_km) + " km · " +
+          big.off_share + "% off balance"},
+      {k: "Quiet weeks", v: fmt.one(quiet.avg_hours) + "h avg",
+       d: quiet.weeks + " weeks · " + fmt.one(quiet.avg_km) + " km · " +
+          quiet.off_share + "% off balance"},
+      /* sleep score is the softer of the two measures and routinely moves not
+         at all, so it is reported as a difference rather than a verdict */
+      big.sleep_score !== null && quiet.sleep_score !== null && {
+        k: "Sleep score", v: rec.sleep_gap === 0
+          ? "No change"
+          : (rec.sleep_gap > 0 ? "+" : "") + rec.sleep_gap + " points",
+        d: big.sleep_score + " in the big weeks · " + quiet.sleep_score +
+           " in the quiet ones",
+      },
+    ]);
   }
 
   /* ---- what it cost + where it happened ---- */

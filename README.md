@@ -58,12 +58,27 @@ payload.
 Your headline distance · top sports ranked by moving time · the hour of day you
 actually train, with an archetype ("After-work athlete") and your earliest and
 latest starts · your busiest weekday · month by month, with your biggest month
-and biggest week · the year's totals restated as things you can picture
+and biggest week · weekly intensity minutes against the 150-a-week public
+health target · what each session did to you, banded on Garmin's own 0–5
+aerobic training-effect scale · your running mechanics, if the year had enough
+running in it · the year's totals restated as things you can picture
 (marathons, Everests, pizzas, litres of sweat, days asleep) · average bedtime
 and wake time on a 24-hour clock face · active days, longest streak, longest
-break · record sessions (fastest kilometre and mile, furthest, hardest, highest
-heart rate) · a closing "training personality" badge built from the labels
-Garmin itself puts on your sessions and days.
+break · whether the heavy training weeks cost you anything overnight · record
+sessions (fastest kilometre and mile, furthest, hardest, highest heart rate) ·
+a closing "training personality" badge built from the labels Garmin itself puts
+on your sessions and days.
+
+Three of those panels make claims that are easy to get wrong, so they are built
+to be falsifiable. The intensity-minutes target is the only figure in the deck
+measured against something outside you, and weeks the window only partly covers
+are drawn but never counted as a miss. The big-weeks-versus-quiet-weeks panel
+writes its own headline from whichever way the data actually goes — including
+"nothing happened", which is the usual answer — and calls a gap real only once
+it clears the week-to-week spread of the measure itself. The running-form panel
+reports the drift between the two halves of the year and then names the
+treadmill share in each, because a change of venue moves all four numbers on
+its own.
 
 Each panel carries its own colours and stays the same in light and dark mode —
 only the page around them follows the theme. Generated squiggles drift behind
