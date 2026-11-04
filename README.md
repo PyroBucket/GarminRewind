@@ -52,17 +52,27 @@ payload.
 
 Your headline distance · top sports ranked by moving time · the hour of day you
 actually train, with an archetype ("After-work athlete") and your earliest and
-latest starts · your busiest weekday · month by month, with your biggest month
-and biggest week · weekly intensity minutes against the 150-a-week public
-health target · what each session did to you, banded on Garmin's own 0–5
-aerobic training-effect scale · your running mechanics, if the year had enough
-running in it · the year's totals restated as things you can picture
-(marathons, Everests, pizzas, litres of sweat, days asleep) · average bedtime
-and wake time on a 24-hour clock face · active days, longest streak, longest
-break · whether the heavy training weeks cost you anything overnight · record
-sessions (fastest kilometre and mile, furthest, hardest, highest heart rate) ·
-a closing "training personality" badge built from the labels Garmin itself puts
-on your sessions and days.
+latest starts · daily steps against Garmin's own moving goal, month by month ·
+how far all those steps actually took you, against a ladder of real distances ·
+how far up the stairs and hills took you, against a ladder of real heights ·
+your busiest weekday · month by month, with your biggest month and biggest week
+· weekly intensity minutes against the 150-a-week public health target · what
+each session did to you, banded on Garmin's own 0–5 aerobic training-effect
+scale · your running mechanics, if the year had enough running in it · the
+year's totals restated as things you can picture (marathons, Everests, pizzas,
+litres of sweat, days asleep) · how the year felt, in Garmin's own verdict on
+each day · average bedtime and wake time on a 24-hour clock face · active days,
+longest streak, longest break · whether the heavy training weeks cost you
+anything overnight · record sessions (fastest kilometre and mile, furthest,
+hardest, highest heart rate) · a closing "training personality" badge built
+from the labels Garmin itself puts on your sessions and days.
+
+**You don't have to be a runner.** Steps, stairs and daily stress are counted
+whether or not you record a workout, so the three panels built on them carry
+the deck on their own: a year with no sessions in it at all still renders,
+leading with steps instead of distance, and the training panels simply drop out
+one by one. Every panel is independently optional — the deck is only skipped
+when the window contains nothing at all.
 
 Three of those panels make claims that are easy to get wrong, so they are built
 to be falsifiable. The intensity-minutes target is the only figure in the deck
@@ -74,6 +84,17 @@ it clears the week-to-week spread of the measure itself. The running-form panel
 reports the drift between the two halves of the year and then names the
 treadmill share in each, because a change of venue moves all four numbers on
 its own.
+
+The two landmark ladders are picked, not listed: neighbouring rungs restate
+each other ("2.1 Kilimanjaros" and "2.5 Mont Blancs" is one fact twice), so a
+rung has to be at least three times smaller than the last one shown, and the
+first landmark you *haven't* cleared is always included because it is the only
+one with somewhere left to go. The Moon stays prose rather than becoming a
+rung — a year of walking is a fraction of a percent of the way there, and
+"0.8% of the way" reads as a failure where "124 years at this pace" reads as
+the joke it is. "Your busiest month" needs 20 days on record before a month
+can win it, or the two-day stub at the end of a rolling window takes it every
+time.
 
 Each panel carries its own colours and stays the same in light and dark mode —
 only the page around them follows the theme. Generated squiggles drift behind

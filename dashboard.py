@@ -639,8 +639,13 @@ def build_months(activities, start, end):
     return out
 
 
-def build_comparisons(activities, summaries, sleep):
-    """Totals restated in units a person can picture."""
+def build_comparisons(activities, summaries, sleep, promoted=()):
+    """Totals restated in units a person can picture.
+
+    `promoted` names the totals that got a panel of their own upstream. The
+    same number twice in one deck reads as a mistake the second time, so a
+    promoted total drops out of here rather than being restated.
+    """
     out = []
 
     total_km = sum((a.get("distance") or 0) for a in activities) / 1000.0
@@ -664,7 +669,7 @@ def build_comparisons(activities, summaries, sleep):
 
     steps = sum(((s.get("movement") or {}).get("steps") or {}).get("value") or 0
                 for s in summaries)
-    if steps:
+    if steps and "steps" not in promoted:
         out.append({
             "value": ("%.1fM" % (steps / 1e6) if steps >= 1e6
                       else fmt_number(steps / 1000.0, 0) + "k"),
@@ -705,7 +710,7 @@ def build_comparisons(activities, summaries, sleep):
 
     floors = sum(((s.get("movement") or {}).get("floorsAscended") or {}).get("value") or 0
                  for s in summaries)
-    if floors:
+    if floors and "floors" not in promoted:
         out.append({
             "value": fmt_number(floors, 0),
             "unit": "floors",
@@ -781,6 +786,10 @@ def build_sleep_story(sleep):
 
 def build_streaks(calendar):
     active = [c for c in calendar if c["minutes"] > 0]
+    # A year with nothing logged in it has no streak to report, and "longest
+    # streak: 0 days, ending None" is worse than no panel at all.
+    if not active:
+        return None
 
     def longest_run(predicate):
         best = run = 0
@@ -811,6 +820,377 @@ def build_streaks(calendar):
         "busiest": {"date": busiest["date"], "minutes": busiest["minutes"],
                     "kinds": busiest["kinds"]} if busiest["minutes"] else None,
     }
+
+
+# --------------------------------------------------------------------------
+# The everyday panels
+#
+# Everything above this point needs a logged session behind it. These three
+# need a pulse: steps, stairs and stress are counted on the days you did
+# nothing at all, which is what lets the deck survive a year -- or a person --
+# with no workouts in it.
+# --------------------------------------------------------------------------
+
+# Rungs for "how far did your own two feet actually take you". Each is a
+# distance most people can picture without being told how long it is.
+WALK_LADDER = [
+    (408, "Straight up to the ISS"),
+    (780, "The Camino de Santiago"),
+    (1434, "London to Rome"),
+    (3500, "The Appalachian Trail"),
+    (3940, "Route 66, end to end"),
+    (5837, "Paris to New York"),
+    (6400, "The Amazon, source to sea"),
+    (9289, "The Trans-Siberian Railway"),
+    (21196, "The Great Wall of China"),
+    (40075, "One lap of the planet"),
+]
+MOON_KM = 384400.0
+
+CLIMB_LADDER = [
+    (324, "The Eiffel Tower"),
+    (443, "The Empire State Building"),
+    (828, "The Burj Khalifa"),
+    (3776, "Mount Fuji"),
+    (4808, "Mont Blanc"),
+    (5895, "Kilimanjaro"),
+    (8849, "Everest, from sea level"),
+    (11000, "A plane's cruising altitude"),
+    # The top of the climb ladder is in it so a year that clears everything
+    # else still has a rung with somewhere left to go. The walking ladder
+    # needs no equivalent -- nobody walks past the last rung but one.
+    (100000, "The Kármán line, where space starts"),
+]
+KARMAN_M = 100000.0     # where the atmosphere officially stops
+
+# How much of a month has to be on record before it can win "your busiest
+# month". A rolling window clips its first and last months, and a watch left
+# off clips any of them -- either way a handful of days is not a month.
+MONTH_MIN_DAYS = 20
+
+
+def ladder_rungs(total, ladder, limit=4):
+    """A few rungs off a ladder of landmarks, spread far enough apart that
+    each one says something the last one didn't.
+
+    Printed in full a ladder is a wall of ratios, and neighbouring rungs
+    mostly restate each other -- 2.1 Kilimanjaros and 2.5 Mont Blancs is the
+    same fact twice. So: the biggest thing the total clears, then only rungs
+    at least three times smaller again, and last the first thing it doesn't
+    clear, which is the only one with somewhere left to go.
+    """
+    if not total:
+        return []
+    rungs = []
+    for size, name in reversed([r for r in ladder if total >= r[0]]):
+        ratio = total / size
+        if rungs and ratio < rungs[-1]["ratio"] * 3:
+            continue
+        rungs.append({
+            "name": name,
+            "size": size,
+            "ratio": round(ratio, 2),
+            "value": ("%.1f×" % ratio) if ratio < 10 else ("%.0f×" % ratio),
+            "cleared": True,
+        })
+        if len(rungs) == limit - 1:
+            break
+    nxt = next((r for r in ladder if total < r[0]), None)
+    if nxt and len(rungs) < limit:
+        rungs.append({
+            "name": nxt[1],
+            "size": nxt[0],
+            "ratio": round(total / nxt[0], 2),
+            "value": "%d%%" % round(100 * total / nxt[0]),
+            "cleared": False,
+        })
+    # Biggest landmark first, so the ladder reads top-down from the one still
+    # out of reach -- and so the meters beside them descend rather than
+    # alternating between full and part-full.
+    rungs.sort(key=lambda r: -r["size"])
+    return rungs
+
+
+def pace_to_target(total, days, target):
+    """How long this rate would take to cover `target` -- the honest framing
+    for a number the year gets nowhere near.
+
+    A year of walking is a fraction of a percent of the way to the Moon, and
+    "0.8% of the way" reads as a failure. "126 years at this pace" is the
+    same arithmetic and reads as a joke you're in on.
+    """
+    # Clearing the target outright makes the whole framing wrong -- "you
+    # reach the edge of space in 0 years" when you passed it in March. The
+    # ladder already names it as cleared, so this just drops out.
+    if not total or not days or total >= target:
+        return None
+    per_year = total * 365.0 / days
+    return {
+        "share": round(100 * total / target, 1),
+        "years": max(1, int(round(target / per_year))),
+    }
+
+
+def build_steps_story(summaries, start, end):
+    """Daily steps against the goal the watch set, month by month.
+
+    The goal is Garmin's own adaptive one and it moves day to day, so it is
+    reported as an average rather than a fixed line -- the per-day comparison
+    underneath it still uses whatever that day was actually asked for.
+    """
+    days = []
+    for summary in summaries:
+        steps = (summary.get("movement") or {}).get("steps") or {}
+        if steps.get("value") is None:
+            continue
+        days.append({
+            "date": summary["calendarDate"][:10],
+            "steps": steps["value"],
+            "goal": steps.get("goal") or 0,
+            "metres": steps.get("distanceInMeters") or 0,
+        })
+    # A month of step counts is a month, not a year.
+    if len(days) < 30:
+        return None
+    days.sort(key=lambda d: d["date"])
+
+    # The longest unbroken run of days that met their goal. Calendar gaps end
+    # a run rather than being skipped over: a missing day is a day the watch
+    # cannot say you cleared anything.
+    best_run = run = 0
+    best_end = None
+    previous = None
+    for day in days:
+        current = parse_day(day["date"])
+        hit = bool(day["goal"]) and day["steps"] >= day["goal"]
+        contiguous = previous is not None and (current - previous).days == 1
+        run = (run + 1 if contiguous else 1) if hit else 0
+        if run > best_run:
+            best_run, best_end = run, day["date"]
+        previous = current
+
+    buckets = defaultdict(lambda: {"steps": 0, "days": 0, "hit": 0})
+    for day in days:
+        when = parse_day(day["date"])
+        bucket = buckets[(when.year, when.month)]
+        bucket["steps"] += day["steps"]
+        bucket["days"] += 1
+        if day["goal"] and day["steps"] >= day["goal"]:
+            bucket["hit"] += 1
+
+    months = []
+    cursor = date(start.year, start.month, 1)
+    while cursor <= end:
+        bucket = buckets.get((cursor.year, cursor.month),
+                             {"steps": 0, "days": 0, "hit": 0})
+        nxt = date(cursor.year + (cursor.month == 12), cursor.month % 12 + 1, 1)
+        months.append({
+            "date": cursor.isoformat(),
+            "label": cursor.strftime("%b"),
+            "long": cursor.strftime("%B %Y"),
+            "avg": round(bucket["steps"] / bucket["days"]) if bucket["days"] else 0,
+            "days": bucket["days"],
+            "hit": bucket["hit"],
+            "whole": cursor >= start and nxt - timedelta(days=1) <= end,
+        })
+        cursor = nxt
+
+    # A daily average sounds like it makes a short month comparable, and it
+    # doesn't: the last month of a rolling window can be two days long, and
+    # two good days beat any real month on the board. Only months with most
+    # of their days on record are eligible to win -- the rest still get drawn.
+    judged = [m for m in months if m["days"] >= MONTH_MIN_DAYS]
+    busiest = max(judged, key=lambda m: m["avg"], default=None)
+
+    total = sum(d["steps"] for d in days)
+    km = sum(d["metres"] for d in days) / 1000.0
+    best = max(days, key=lambda d: d["steps"])
+    quietest = min(days, key=lambda d: d["steps"])
+    goals = [d["goal"] for d in days if d["goal"]]
+    hit = [d for d in days if d["goal"] and d["steps"] >= d["goal"]]
+
+    return {
+        "days": len(days),
+        "total": total,
+        # Divided by days that carry a step count, not by days in the window:
+        # a watch left in a drawer for a fortnight would otherwise drag the
+        # average down as though those were days you sat still.
+        "avg": round(total / len(days)),
+        "km": round(km, 1),
+        "goal": round(mean(goals)) if goals else None,
+        "hit": len(hit),
+        "hit_share": round(100 * len(hit) / len(days)),
+        "best_run": best_run,
+        "best_run_end": best_end,
+        "ten_k_days": sum(1 for d in days if d["steps"] >= 10000),
+        "best": {"date": best["date"], "steps": best["steps"],
+                 "km": round(best["metres"] / 1000.0, 1)},
+        "quietest": {"date": quietest["date"], "steps": quietest["steps"]},
+        "months": months,
+        "busiest_month": busiest,
+        "peak_index": months.index(busiest) if busiest else None,
+        "rungs": ladder_rungs(km, WALK_LADDER),
+        "moon": pace_to_target(km, len(days), MOON_KM),
+    }
+
+
+def build_climb_story(summaries):
+    """Floors climbed -- stairs, hills, everything the barometer caught.
+
+    The elevation line in "Put another way" is what you climbed while
+    training. This is what you climbed while living, which in most years is
+    comfortably the bigger of the two.
+    """
+    days = []
+    for summary in summaries:
+        floors = (summary.get("movement") or {}).get("floorsAscended") or {}
+        if floors.get("value") is None:
+            continue
+        days.append({
+            "date": summary["calendarDate"][:10],
+            "floors": floors["value"],
+            "metres": floors.get("distanceInMeters") or 0,
+            "goal": floors.get("goal") or 0,
+        })
+    if len(days) < 30:
+        return None
+
+    total = sum(d["floors"] for d in days)
+    metres = sum(d["metres"] for d in days)
+    # A watch without a barometer reports the field and fills it with zeroes.
+    if not total or not metres:
+        return None
+
+    best = max(days, key=lambda d: d["floors"])
+    goals = [d["goal"] for d in days if d["goal"]]
+    hit = [d for d in days if d["goal"] and d["floors"] >= d["goal"]]
+
+    return {
+        "days": len(days),
+        "floors": total,
+        "metres": round(metres),
+        "avg": round(total / len(days)),
+        "goal": round(mean(goals)) if goals else None,
+        "hit": len(hit),
+        "hit_share": round(100 * len(hit) / len(days)),
+        "best": {"date": best["date"], "floors": best["floors"],
+                 "metres": round(best["metres"])},
+        "rungs": ladder_rungs(metres, CLIMB_LADDER),
+        "space": pace_to_target(metres, len(days), KARMAN_M),
+    }
+
+
+# Garmin's own verdict on a day, in the order of how the day went. The
+# _awake suffix is the same label measured over the waking hours only, so it
+# folds into its base band rather than becoming a fifth one.
+STRESS_BANDS = [
+    ("calm", "Calm"),
+    ("balanced", "Balanced"),
+    ("stressful", "Stressful"),
+    ("very_stressful", "Very stressful"),
+]
+STRESS_KEYS = {key for key, _ in STRESS_BANDS}
+
+
+def build_stress_story(summaries):
+    """How the year felt, in the watch's own words for each day.
+
+    `qualifier` is Garmin's label, not ours, which is most of why this earns
+    a panel: it is a read on the whole year that needs no session behind it.
+    """
+    days = []
+    for summary in summaries:
+        stress = summary.get("stress") or {}
+        if stress.get("avgLevel") is None:
+            continue
+        qualifier = (stress.get("qualifier") or "").lower()
+        base = qualifier[:-6] if qualifier.endswith("_awake") else qualifier
+        days.append({
+            "date": summary["calendarDate"][:10],
+            "level": stress["avgLevel"],
+            "band": base if base in STRESS_KEYS else None,
+            "rest": stress.get("restProportion"),
+        })
+    if len(days) < 30:
+        return None
+    days.sort(key=lambda d: d["date"])
+
+    counts = Counter(d["band"] for d in days if d["band"])
+    judged = sum(counts.values())
+    # Without labels this is a chart of a unitless 0-100 score, which is not
+    # a story. The qualifier is the whole panel.
+    if judged < 30:
+        return None
+
+    bands = [{"key": key, "label": label,
+              "count": counts.get(key, 0),
+              "share": round(100 * counts.get(key, 0) / judged)}
+             for key, label in STRESS_BANDS]
+    top = max(bands, key=lambda b: b["count"])
+
+    # The longest run of days the watch did not call stressful. Unlabelled
+    # days break the run rather than extending it, for the same reason a
+    # calendar gap does in the steps panel.
+    best_run = run = 0
+    best_end = None
+    previous = None
+    for day in days:
+        current = parse_day(day["date"])
+        calm = day["band"] in ("calm", "balanced")
+        contiguous = previous is not None and (current - previous).days == 1
+        run = (run + 1 if contiguous else 1) if calm else 0
+        if run > best_run:
+            best_run, best_end = run, day["date"]
+        previous = current
+
+    buckets = defaultdict(list)
+    for day in days:
+        when = parse_day(day["date"])
+        buckets[(when.year, when.month)].append(day["level"])
+
+    months = []
+    for (year, month), levels in sorted(buckets.items()):
+        months.append({
+            "date": date(year, month, 1).isoformat(),
+            "label": date(year, month, 1).strftime("%b"),
+            "long": date(year, month, 1).strftime("%B %Y"),
+            "avg": round(sum(levels) / len(levels)),
+            "days": len(levels),
+        })
+    # Same rule as the steps strip: a clipped month gets drawn but cannot win.
+    judged_months = [m for m in months if m["days"] >= MONTH_MIN_DAYS]
+    calmest_month = min(judged_months, key=lambda m: m["avg"], default=None)
+    worst_month = max(judged_months, key=lambda m: m["avg"], default=None)
+
+    calmest = min(days, key=lambda d: d["level"])
+    worst = max(days, key=lambda d: d["level"])
+    rest = [d["rest"] for d in days if d["rest"] is not None]
+
+    return {
+        "days": len(days),
+        "judged": judged,
+        "avg": round(mean([d["level"] for d in days])),
+        "bands": bands,
+        "top": top,
+        # By key, not by position: the template sorts a copy of `bands` by
+        # size for display, so two orderings of this list are in play.
+        "calm_share": sum(b["share"] for b in bands
+                          if b["key"] in ("calm", "balanced")),
+        "calm_run": best_run,
+        "calm_run_end": best_end,
+        "calmest": {"date": calmest["date"], "level": calmest["level"]},
+        "worst": {"date": worst["date"], "level": worst["level"]},
+        "months": months,
+        # The strip plots a monthly average, so the clipped first and last
+        # months of the window compete on the same footing as the rest.
+        "peak_index": months.index(worst_month) if worst_month else None,
+        "calmest_month": calmest_month,
+        "worst_month": worst_month,
+        "rest_hours": round(mean(rest) * 24, 1) if rest else None,
+    }
+
+
+# --------------------------------------------------------------------------
 
 
 def build_superlatives(activities):
@@ -1484,7 +1864,7 @@ def build_personality(activities, clock, weekdays, streaks, summaries):
     Nothing here is invented: the title is the time-of-day archetype, and every
     trait line quotes a count that is on the page somewhere else.
     """
-    if not activities or not clock:
+    if not activities or not clock or not weekdays or not streaks:
         return None
 
     traits = []
@@ -1536,21 +1916,29 @@ def build_personality(activities, clock, weekdays, streaks, summaries):
 
 
 def build_wrapped(bundle, activities, summaries, sleep, calendar, weekly, start, end):
-    # No sessions means no story -- the template drops the whole section rather
-    # than printing a page of confident zeroes.
-    if not activities or not calendar:
+    # A year with no sessions in it is still a year the watch was on your
+    # wrist: steps, stairs and stress are counted whether or not you train.
+    # So the gate is "was anything recorded at all", and an empty activity
+    # list drops the training panels one at a time rather than the deck --
+    # every panel below is individually optional for exactly this reason.
+    if not activities and not summaries:
         return None
 
     clock = build_clock(activities)
-    weekdays = build_weekdays(activities)
-    streaks = build_streaks(calendar)
-    months = build_months(activities, start, end)
+    weekdays = build_weekdays(activities) if activities else None
+    streaks = build_streaks(calendar) if calendar else None
+    months = build_months(activities, start, end) if activities else None
 
     total_km = sum((a.get("distance") or 0) for a in activities) / 1000.0
     total_hours = sum(moving_seconds(a) for a in activities) / 3600.0
-    whole_months = [m for m in months if m["whole"]] or months
+    whole_months = [m for m in months if m["whole"]] or months if months else []
     biggest_month = max(whole_months, key=lambda m: m["hours"], default=None)
     biggest_week = max(weekly, key=lambda w: w["km"], default=None)
+
+    steps_story = build_steps_story(summaries, start, end)
+    climb_story = build_climb_story(summaries)
+    promoted = ({"steps"} if steps_story else set()) | \
+               ({"floors"} if climb_story else set())
 
     return {
         "opening": {
@@ -1560,7 +1948,10 @@ def build_wrapped(bundle, activities, summaries, sleep, calendar, weekly, start,
             "sessions": len(activities),
             "days": (end - start).days + 1,
             "calories": sum((a.get("calories") or 0) for a in activities),
-        },
+        } if activities else None,
+        "steps": steps_story,
+        "climb": climb_story,
+        "stress": build_stress_story(summaries),
         "hardest": build_hardest(activities, summaries, sleep),
         "podium": build_podium(activities),
         "clock": clock,
@@ -1574,7 +1965,7 @@ def build_wrapped(bundle, activities, summaries, sleep, calendar, weekly, start,
         "months": months,
         "biggest_month": biggest_month if biggest_month and biggest_month["count"] else None,
         "biggest_week": biggest_week if biggest_week and biggest_week["km"] else None,
-        "comparisons": build_comparisons(activities, summaries, sleep),
+        "comparisons": build_comparisons(activities, summaries, sleep, promoted),
         "sleep": build_sleep_story(sleep),
         "streaks": streaks,
         "cost": build_cost(activities, summaries),

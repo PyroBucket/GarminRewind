@@ -1043,6 +1043,11 @@ const MOODS = {
 
 function row(parent) { return html("div", "row", parent || $("#story")); }
 
+/* A landmark name reads fine as a label and badly in the middle of a
+   sentence -- "15× The Burj Khalifa". Only the leading article is lowered;
+   everything after it is a proper noun and keeps its capital. */
+const lede = name => name.replace(/^(The|A|An) /, (m, word) => word.toLowerCase() + " ");
+
 function panel(parent, mood, span, eyebrow, extra) {
   const node = html("div", "panel " + MOODS[mood] + " span-" + span +
                            (extra ? " " + extra : ""), parent);
@@ -1249,13 +1254,17 @@ function renderStory() {
     const p = panel(row(), "a", 12, "Nothing to rewind yet");
     html("h2", "headline", p, "Your year hasn't landed yet");
     html("p", "say", p,
-      "No sessions in this window. Run a fetch, rebuild, come back — and the " +
-      "charts next door still have whatever your watch did record.");
+      "Nothing in this window — no sessions, and no days the watch counted " +
+      "either. Run a fetch, rebuild, come back; the charts next door will " +
+      "show whatever did land.");
     return;
   }
 
-  /* ---- opening: the headline total ---- */
-  {
+  /* ---- opening: the headline total ----
+     Optional, because it is a distance total and a year can contain no
+     sessions at all. When it is missing the steps panel below takes the
+     opener's styling and leads instead. */
+  if (w.opening) {
     const p = panel(row(), "a", 12, "Your year in one number", "opener");
     bignum(p, w.opening.km, 1, "kilometres");
     html("p", "say", p,
@@ -1329,7 +1338,7 @@ function renderStory() {
   }
 
   /* ---- top sports + hour of day ---- */
-  {
+  if (w.podium.length || w.clock) {
     const r = row();
 
     if (w.podium.length) {
@@ -1361,6 +1370,135 @@ function renderStory() {
          d: w.clock.earliest.type + " · " + fmt.day(w.clock.earliest.date)},
         {k: "Latest start", v: w.clock.latest.clock,
          d: w.clock.latest.type + " · " + fmt.day(w.clock.latest.date)},
+      ]);
+    }
+  }
+
+  /* ---- the year that happened without you logging it ----
+     The first panel in the deck that needs no session behind it. Everything
+     above is a fact about training; this is a fact about the days, and on a
+     year with nothing logged it leads instead of the distance total. */
+  if (w.steps) {
+    const s = w.steps;
+    const p = panel(row(), "c", 12, "Every day counts",
+                    w.opening ? null : "opener");
+    bignum(p, s.total, 0, "steps");
+    html("h2", "headline", p,
+      s.goal
+        ? (s.hit ? "You cleared the goal on " + s.hit +
+                   (s.hit === 1 ? " day" : " days")
+                 : "The goal held out all year")
+        : fmt.int(s.avg) + " a day, every day");
+    html("p", "say", p,
+      fmt.int(s.avg) + " steps on an average day across the " + s.days +
+      " the watch counted" +
+      /* Garmin's step goal is adaptive -- it moves with what you have been
+         doing -- so it is quoted as an average and never as a line */
+      (s.goal
+        ? ", against a goal that averaged " + fmt.int(s.goal) +
+          " and moved every day — and " + s.hit_share + "% of those days " +
+          "cleared whatever they were set."
+        : ".") +
+      " " + s.ten_k_days + " of those days broke ten thousand.");
+    strip(p, s.months.map(m => ({
+      value: m.avg,
+      title: m.long + " — " + (m.days
+        ? fmt.int(m.avg) + " steps a day across " + m.days +
+          (m.days === 1 ? " day" : " days")
+        : "nothing recorded"),
+    })), s.months.map(m => m.label), s.peak_index);
+    facts(p, [
+      {k: "Biggest day", v: fmt.int(s.best.steps),
+       d: fmt.day(s.best.date) + (s.best.km ? " · " + fmt.one(s.best.km) + " km" : "")},
+      s.busiest_month && {k: "Busiest month", v: fmt.int(s.busiest_month.avg) + " a day",
+                          d: s.busiest_month.long},
+      /* named "goal run" rather than "streak": the Showing up panel further
+         down owns the word, and it counts a different thing */
+      s.goal && {k: "Longest goal run",
+                 v: s.best_run + (s.best_run === 1 ? " day" : " days"),
+                 d: s.best_run ? "ending " + fmt.day(s.best_run_end)
+                               : "never two in a row"},
+      {k: "Quietest day", v: fmt.int(s.quietest.steps),
+       d: fmt.day(s.quietest.date) + " · everyone gets one"},
+    ]);
+    if (!w.opening) doodle(p);
+  }
+
+  /* ---- how far, and how high ----
+     Both panels are the same move: one year-long total held against a ladder
+     of things that total means something next to. The meter is progress
+     toward each landmark and tops out when you clear it, so a full bar reads
+     as done and the one part-full bar is the one with somewhere left to go. */
+  if ((w.steps && w.steps.rungs.length) || (w.climb && w.climb.rungs.length)) {
+    const r = row();
+
+    if (w.steps && w.steps.rungs.length) {
+      const s = w.steps;
+      /* Both panels are six columns rather than a 7/5 split because the
+         figure is sized off the viewport, not the panel: at span-5 a
+         six-digit total runs off its own edge. */
+      const p = panel(r, "f", 6, "Where that would have got you");
+      const top = s.rungs.find(r2 => r2.cleared);
+      bignum(p, s.km, 0, "kilometres on foot");
+      html("h2", "headline", p,
+        top ? "That's " + top.value + " " + lede(top.name)
+            : "Every step, laid end to end");
+      html("p", "say", p,
+        "Not a metre of it in a vehicle — this is every step the watch " +
+        "counted across " + s.days + " days, straightened out." +
+        /* a year of walking is a fraction of a percent of the way to the
+           Moon, and the percentage on its own reads as a failure. The same
+           arithmetic as a date you could actually put in a diary doesn't. */
+        (s.moon
+          ? " The Moon is 384,400 km away: you are " + s.moon.share +
+            "% of the way, and at this rate you land in " + s.moon.years +
+            " years."
+          : ""));
+      rankList(p, s.rungs.map(r2 => ({
+        label: r2.name,
+        weight: Math.min(1, r2.ratio),
+        value: r2.value,
+        sub: fmt.int(r2.size) + " km" + (r2.cleared ? "" : " · not yet"),
+      })));
+      facts(p, [
+        {k: "On an average day", v: fmt.one(s.km / s.days) + " km",
+         d: "without going anywhere in particular"},
+        s.best.km && {k: "Furthest in a day", v: fmt.one(s.best.km) + " km",
+                      d: fmt.day(s.best.date)},
+      ]);
+    }
+
+    if (w.climb && w.climb.rungs.length) {
+      const c = w.climb;
+      const p = panel(r, "a", 6, "And how high");
+      const top = c.rungs.find(r2 => r2.cleared);
+      bignum(p, c.metres, 0, "metres up");
+      html("h2", "headline", p,
+        top ? top.value + " " + lede(top.name)
+            : fmt.int(c.floors) + " floors climbed");
+      html("p", "say", p,
+        /* the elevation line in "Put another way" is training climb; this is
+           the barometer's count of everything else, which is usually larger */
+        fmt.int(c.floors) + " floors — stairs, hills, everything the " +
+        "barometer caught, training or not. About " + c.avg + " a day." +
+        /* the share is on the meter below, so the prose only adds the part
+           the meter can't say */
+        (c.space
+          ? " At this rate you reach the edge of space in " + c.space.years +
+            " years."
+          : ""));
+      rankList(p, c.rungs.map(r2 => ({
+        label: r2.name,
+        weight: Math.min(1, r2.ratio),
+        value: r2.value,
+        sub: fmt.int(r2.size) + " m" + (r2.cleared ? "" : " · not yet"),
+      })));
+      facts(p, [
+        {k: "Biggest day", v: fmt.int(c.best.floors) + " floors",
+         d: fmt.day(c.best.date) + " · " + fmt.int(c.best.metres) + " m up"},
+        c.goal && {k: "Days past the goal", v: fmt.int(c.hit),
+                   d: c.hit_share + "% of the year · goal averaged " +
+                      c.goal + " floors"},
       ]);
     }
   }
@@ -1403,10 +1541,10 @@ function renderStory() {
   }
 
   /* ---- weekday rhythm + month by month ---- */
-  {
+  if (w.weekdays || w.months) {
     const r = row();
 
-    {
+    if (w.weekdays) {
       const wd = w.weekdays;
       const p = panel(r, "d", 5, "Your week has a shape");
       html("h2", "headline", p, wd.best.name + " is your day");
@@ -1420,7 +1558,7 @@ function renderStory() {
       })), wd.rows.map(d => d.short));
     }
 
-    {
+    if (w.months) {
       const p = panel(r, "c", 7, "Month by month");
       if (w.biggest_month) {
         html("h2", "headline", p, w.biggest_month.long + " was your biggest");
@@ -1520,7 +1658,7 @@ function renderStory() {
      The zone panel above says where the hours went; this says what Garmin
      thought they achieved. Training effect is per-session and capped at 5, so
      nothing here is a total -- it is a count of sessions per band. */
-  {
+  if (w.training_effect || w.form) {
     const r = row();
 
     if (w.training_effect) {
@@ -1614,8 +1752,78 @@ function renderStory() {
     });
   }
 
+  /* ---- how the year actually felt ----
+     Every other verdict in this deck is one we worked out. This one is
+     Garmin's: it puts a word on each day off the back of all-day heart-rate
+     variability, and the distribution of that word across a year is the
+     closest the data comes to saying how the year went. Printed in its own
+     terms, not translated -- "balanced" is the watch's word. */
+  if (w.stress) {
+    const st = w.stress;
+    const p = panel(row(), "b", 12, "How the year felt");
+    html("h2", "headline", p,
+      st.top.share + "% of your days came back “" +
+      st.top.label.toLowerCase() + "”");
+    bignum(p, st.avg, 0, "average stress");
+    html("p", "say", p,
+      "Garmin scores the whole day from 0 to 100 and then puts a word on it. " +
+      "Across the " + st.judged + " days it labelled, " + st.calm_share +
+      "% came back calm or balanced." +
+      (st.rest_hours
+        ? " It read " + fmt.one(st.rest_hours) + " hours of every day as " +
+          "genuine rest."
+        : ""));
+    /* A ranked list rather than a strip: four bands where one holds three
+       quarters of the year leaves the other three as identical stubs on a
+       bar chart, and the counts are the part worth reading anyway. */
+    /* sorted by size, not by the scale's own order: the list numbers its
+       rows #1 upward, and "#1 Calm, 17%" above "#2 Balanced, 73%" reads as
+       a ranking that disagrees with itself */
+    rankList(p, st.bands.slice().sort((a, b) => b.count - a.count).map(b => ({
+      label: b.label,
+      weight: b.count,
+      value: b.share + "%",
+      sub: b.count + (b.count === 1 ? " day" : " days"),
+    })));
+    /* the split above is the whole year at once; this is the same measure
+       given a shape, month by month */
+    strip(p, st.months.map(m => ({
+      value: m.avg,
+      title: m.long + " — " + m.avg + " average stress across " + m.days +
+             (m.days === 1 ? " day" : " days"),
+    })), st.months.map(m => m.label), st.peak_index);
+    /* Those columns usually look identical, and that is the finding rather
+       than a broken chart -- say it, because a reader who can't see a
+       difference will assume the strip is wrong before assuming it's flat. */
+    if (st.calmest_month && st.worst_month) {
+      const spread = st.worst_month.avg - st.calmest_month.avg;
+      html("p", "say", p,
+        spread <= 5
+          ? "Month to month it barely moved: " + st.calmest_month.label +
+            " was your calmest at " + st.calmest_month.avg + " and " +
+            st.worst_month.label + " your hardest at " + st.worst_month.avg +
+            " — " + spread + " points between the best month of the year and " +
+            "the worst."
+          : st.worst_month.long + " was the hardest stretch at " +
+            st.worst_month.avg + " against " + st.calmest_month.avg + " in " +
+            st.calmest_month.long + ", a spread of " + spread + " points.");
+    }
+    facts(p, [
+      st.calmest_month && {k: "Calmest month", v: st.calmest_month.avg + " avg",
+                           d: st.calmest_month.long},
+      st.worst_month && {k: "Hardest month", v: st.worst_month.avg + " avg",
+                         d: st.worst_month.long},
+      {k: "Longest calm run",
+       v: st.calm_run + (st.calm_run === 1 ? " day" : " days"),
+       d: st.calm_run ? "ending " + fmt.day(st.calm_run_end)
+                      : "never two in a row"},
+      {k: "Worst single day", v: st.worst.level + " avg",
+       d: fmt.day(st.worst.date)},
+    ]);
+  }
+
   /* ---- sleep + showing up ---- */
-  {
+  if (w.sleep || w.streaks) {
     const r = row();
 
     if (w.sleep) {
@@ -1639,7 +1847,7 @@ function renderStory() {
       ]);
     }
 
-    {
+    if (w.streaks) {
       const s = w.streaks;
       const p = panel(r, "f", 6, "Showing up");
       bignum(p, s.active_days, 0, "active days");
